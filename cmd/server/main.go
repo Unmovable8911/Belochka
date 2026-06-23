@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"belochka/internal/api"
+	"belochka/internal/config"
 	"belochka/internal/hub"
 	"belochka/web"
 )
@@ -17,6 +20,15 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	configPath := flag.String("config", "", "path to configuration file")
+	flag.Parse()
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
+	}
 
 	h := hub.New()
 
@@ -32,8 +44,9 @@ func main() {
 
 	router := api.NewRouter(h, routerOpts...)
 
+	addr := fmt.Sprintf(":%d", cfg.Port)
 	srv := &http.Server{
-		Addr:    ":53136",
+		Addr:    addr,
 		Handler: router,
 	}
 
@@ -43,7 +56,7 @@ func main() {
 	go h.Run(ctx)
 
 	go func() {
-		slog.Info("starting server", "addr", srv.Addr)
+		slog.Info("starting server", "addr", srv.Addr, "data_dir", cfg.DataDir)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server failed", "error", err)
 			os.Exit(1)
