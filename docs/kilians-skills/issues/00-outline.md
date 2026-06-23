@@ -18,6 +18,6 @@
 18. Server Detail Page — Network and Process Table — blocked by: #16 — status: pending
 19. SSH Auto-Reconnect — blocked by: #10 — status: pending
 20. WebSocket Auto-Reconnect and Disconnection UX — blocked by: #12 — status: pending
-21. Configuration File and Encryption Key Management — blocked by: #2 — status: pending
+21. Configuration File and Encryption Key Management — blocked by: #2 — status: resolved
 22. Graceful Shutdown — blocked by: #10, #11 — status: pending
 23. Production Single Binary Build — blocked by: #1 — status: resolved
