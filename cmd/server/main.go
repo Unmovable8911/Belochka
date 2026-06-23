@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"belochka/internal/api"
+	"belochka/internal/hub"
 )
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	router := api.NewRouter()
+	h := hub.New()
+
+	router := api.NewRouter(h)
 
 	srv := &http.Server{
 		Addr:    ":53136",
@@ -25,6 +28,8 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+
+	go h.Run(ctx)
 
 	go func() {
 		slog.Info("starting server", "addr", srv.Addr)

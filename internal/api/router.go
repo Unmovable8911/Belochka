@@ -4,14 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"belochka/internal/hub"
+
 	"github.com/go-chi/chi/v5"
 )
 
 // NewRouter creates and returns the application HTTP router with all routes mounted.
-func NewRouter() http.Handler {
+func NewRouter(h *hub.Hub) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/api/health", handleHealth)
+	r.Get("/api/ws", h.ServeWS)
 
 	return r
 }

@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"belochka/internal/api"
+	"belochka/internal/hub"
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	router := api.NewRouter()
+	h := hub.New()
+	router := api.NewRouter(h)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rec := httptest.NewRecorder()

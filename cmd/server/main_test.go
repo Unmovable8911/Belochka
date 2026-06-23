@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"belochka/internal/api"
+	"belochka/internal/hub"
 )
 
 func TestServerListensOnConfiguredPort(t *testing.T) {
-	router := api.NewRouter()
+	h := hub.New()
+	router := api.NewRouter(h)
 
 	srv := &http.Server{
 		Addr:    ":53136",
