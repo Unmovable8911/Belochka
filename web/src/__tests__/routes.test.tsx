@@ -1,18 +1,21 @@
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { Routes, Route } from "react-router-dom"
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import Dashboard from "../pages/Dashboard"
 import ServerDetail from "../pages/ServerDetail"
+import { MonitorContext, initialMonitorState } from "../hooks/useMonitorState"
 
 function renderWithRouter(initialEntries: string[]) {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/server/:id" element={<ServerDetail />} />
-      </Routes>
-    </MemoryRouter>
+    <MonitorContext value={{ state: initialMonitorState, dispatch: vi.fn() }}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/server/:id" element={<ServerDetail />} />
+        </Routes>
+      </MemoryRouter>
+    </MonitorContext>
   )
 }
 

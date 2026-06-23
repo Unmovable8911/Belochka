@@ -123,11 +123,23 @@ export interface WsConnectedAction {
   data: boolean
 }
 
+export interface RemoveServerAction {
+  type: "remove_server"
+  data: { serverId: string }
+}
+
+export interface UpdateServerAction {
+  type: "update_server"
+  data: { serverId: string; name: string; host: string }
+}
+
 export type MonitorAction =
   | SnapshotAction
   | MetricsAction
   | StatusAction
   | WsConnectedAction
+  | RemoveServerAction
+  | UpdateServerAction
 
 // --- Reducer ---
 
@@ -164,6 +176,26 @@ export function monitorReducer(state: MonitorState, action: MonitorAction): Moni
         ...state,
         wsConnected: action.data,
       }
+
+    case "remove_server": {
+      const { [action.data.serverId]: _, ...remainingMetrics } = state.metrics
+      return {
+        ...state,
+        servers: state.servers.filter((s) => s.id !== action.data.serverId),
+        metrics: remainingMetrics,
+      }
+    }
+
+    case "update_server": {
+      return {
+        ...state,
+        servers: state.servers.map((s) =>
+          s.id === action.data.serverId
+            ? { ...s, name: action.data.name, host: action.data.host }
+            : s
+        ),
+      }
+    }
 
     default:
       return state

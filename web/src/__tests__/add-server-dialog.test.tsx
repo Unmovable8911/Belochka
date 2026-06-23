@@ -3,10 +3,20 @@ import { render, screen, cleanup, within, fireEvent } from "@testing-library/rea
 import userEvent from "@testing-library/user-event"
 import Dashboard from "../pages/Dashboard"
 import { AddServerDialog } from "../components/AddServerDialog"
+import { MonitorContext, initialMonitorState, type MonitorState } from "../hooks/useMonitorState"
+
+const stateWithServers: MonitorState = {
+  ...initialMonitorState,
+  servers: [{ id: "srv-1", name: "Test Server", host: "10.0.0.1", status: "connected" }],
+}
 
 async function openAddServerDialog() {
   const user = userEvent.setup()
-  render(<Dashboard />)
+  render(
+    <MonitorContext value={{ state: stateWithServers, dispatch: vi.fn() }}>
+      <Dashboard />
+    </MonitorContext>
+  )
 
   const addButton = screen.getByRole("button", { name: /add server/i })
   await user.click(addButton)

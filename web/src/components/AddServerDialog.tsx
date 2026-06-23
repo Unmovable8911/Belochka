@@ -63,9 +63,10 @@ export interface AddServerDialogProps {
   onServerAdded?: (server: ServerResponse) => void
   defaultOpen?: boolean
   defaultAuthType?: AuthType
+  triggerLabel?: string
 }
 
-export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAuthType = "password" }: AddServerDialogProps) {
+export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAuthType = "password", triggerLabel }: AddServerDialogProps) {
   const [open, setOpen] = useState(defaultOpen)
   const [form, setForm] = useState<ServerFormData>({ ...initialFormData, authType: defaultAuthType })
   const [testing, setTesting] = useState(false)
@@ -214,7 +215,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
       <DialogTrigger asChild>
         <Button>
           <PlusIcon className="size-4" />
-          Add Server
+          {triggerLabel ?? "Add Server"}
         </Button>
       </DialogTrigger>
       <DialogContent>
