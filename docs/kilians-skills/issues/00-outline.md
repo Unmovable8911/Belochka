@@ -15,7 +15,7 @@
 15. Dashboard Disconnected State Display — blocked by: #14 — status: resolved
 16. Server Detail Page — System Info and CPU — blocked by: #14 — status: resolved
 17. Server Detail Page — Memory and Disk — blocked by: #16 — status: resolved
-18. Server Detail Page — Network and Process Table — blocked by: #16 — status: pending
+18. Server Detail Page — Network and Process Table — blocked by: #16 — status: resolved
 19. SSH Auto-Reconnect — blocked by: #10 — status: resolved
 20. WebSocket Auto-Reconnect and Disconnection UX — blocked by: #12 — status: resolved
 21. Configuration File and Encryption Key Management — blocked by: #2 — status: resolved
