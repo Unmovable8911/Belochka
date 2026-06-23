@@ -12,7 +12,7 @@
 12. React WebSocket State Management — blocked by: #11 — status: resolved
 13. Data Formatting Utilities — blocked by: #1 — status: resolved
 14. Dashboard Server Cards — blocked by: #10, #12, #13 — status: resolved
-15. Dashboard Disconnected State Display — blocked by: #14 — status: pending
+15. Dashboard Disconnected State Display — blocked by: #14 — status: resolved
 16. Server Detail Page — System Info and CPU — blocked by: #14 — status: pending
 17. Server Detail Page — Memory and Disk — blocked by: #16 — status: pending
 18. Server Detail Page — Network and Process Table — blocked by: #16 — status: pending
