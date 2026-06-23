@@ -4,7 +4,7 @@
 4. SSH Connection Testing and Host Key Verification — blocked by: #3 — status: resolved
 5. Add Server UI — blocked by: #4 — status: resolved
 6. Edit Server — blocked by: #5 — status: resolved
-7. Delete Server — blocked by: #5 — status: pending
+7. Delete Server — blocked by: #5 — status: resolved
 8. Empty State Guidance — blocked by: #5 — status: pending
 9. Metrics Parsers — blocked by: #1 — status: resolved
 10. Metrics Collector — blocked by: #4, #9 — status: resolved
