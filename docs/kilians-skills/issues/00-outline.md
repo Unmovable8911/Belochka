@@ -1,6 +1,6 @@
 1. Project Scaffold — blocked by: none — status: resolved
 2. SQLite Store Layer — blocked by: #1 — status: resolved
-3. Server CRUD REST API — blocked by: #2 — status: pending
+3. Server CRUD REST API — blocked by: #2 — status: resolved
 4. SSH Connection Testing and Host Key Verification — blocked by: #3 — status: pending
 5. Add Server UI — blocked by: #4 — status: pending
 6. Edit Server — blocked by: #5 — status: pending
