@@ -76,6 +76,8 @@ export interface ServerInfo {
   name: string
   host: string
   status: string
+  attempts?: number
+  lastError?: string
 }
 
 // --- State ---
@@ -115,6 +117,8 @@ export interface StatusAction {
   data: {
     serverId: string
     status: string
+    attempts?: number
+    lastError?: string
   }
 }
 
@@ -163,7 +167,14 @@ export function monitorReducer(state: MonitorState, action: MonitorAction): Moni
 
     case "status": {
       const updatedServers = state.servers.map((s) =>
-        s.id === action.data.serverId ? { ...s, status: action.data.status } : s
+        s.id === action.data.serverId
+          ? {
+              ...s,
+              status: action.data.status,
+              attempts: action.data.attempts,
+              lastError: action.data.lastError,
+            }
+          : s
       )
       return {
         ...state,

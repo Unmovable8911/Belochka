@@ -1,5 +1,6 @@
 import React from "react"
 import { Link } from "react-router-dom"
+import { WifiOff, Loader2, ShieldAlert, KeyRound } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -37,6 +38,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
     case "connected":
       return "default"
     case "error":
+    case "failed":
       return "destructive"
     default:
       return "secondary"
@@ -60,7 +62,44 @@ function ColoredProgress({
   )
 }
 
+function getDisconnectedDisplay(server: ServerInfo): {
+  icon: React.ReactNode
+  message: string
+} | null {
+  if (server.status === "connected") return null
+
+  if (server.status === "failed") {
+    const err = server.lastError ?? ""
+    if (err.toLowerCase().includes("host key mismatch")) {
+      return {
+        icon: <ShieldAlert className="size-8 text-destructive" />,
+        message: "Host key mismatch — check configuration",
+      }
+    }
+    return {
+      icon: <KeyRound className="size-8 text-destructive" />,
+      message: "Auth failed — check configuration",
+    }
+  }
+
+  // reconnecting
+  const attempts = server.attempts ?? 0
+  if (attempts === 0) {
+    return {
+      icon: <Loader2 className="size-8 text-muted-foreground animate-spin" />,
+      message: "Connecting...",
+    }
+  }
+
+  return {
+    icon: <WifiOff className="size-8 text-muted-foreground" />,
+    message: `Reconnecting (${attempts}/∞)`,
+  }
+}
+
 const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCardProps) {
+  const disconnected = getDisconnectedDisplay(server)
+
   const cpuPercent = metrics?.cpu.aggregate.usagePercent
   const memPercent = metrics?.memory
     ? (metrics.memory.used / metrics.memory.total) * 100
@@ -84,7 +123,7 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
       className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
       aria-label={server.name}
     >
-      <Card className="hover:shadow-md transition-shadow cursor-pointer">
+      <Card data-testid="server-card" className="hover:shadow-md transition-shadow cursor-pointer">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>{server.name}</CardTitle>
@@ -93,7 +132,12 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
           <CardDescription>{server.host}</CardDescription>
         </CardHeader>
 
-        {metrics && (
+        {disconnected ? (
+          <CardContent className="min-h-[140px] flex flex-col items-center justify-center text-center gap-2">
+            {disconnected.icon}
+            <p className="text-sm text-muted-foreground">{disconnected.message}</p>
+          </CardContent>
+        ) : metrics ? (
           <CardContent className="space-y-3">
             {/* CPU */}
             {cpuPercent !== undefined && (
@@ -142,7 +186,7 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
               </div>
             )}
           </CardContent>
-        )}
+        ) : null}
       </Card>
     </Link>
   )
