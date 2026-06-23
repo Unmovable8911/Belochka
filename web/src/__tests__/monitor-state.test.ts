@@ -103,4 +103,30 @@ describe("monitorReducer", () => {
     const state2 = monitorReducer(state, { type: "ws_connected", data: false })
     expect(state2.wsConnected).toBe(false)
   })
+
+  it("removes server and its metrics on remove_server action", () => {
+    const stateWithServers: MonitorState = {
+      ...initialMonitorState,
+      servers: [
+        { id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" },
+        { id: "srv-2", name: "db-1", host: "10.0.0.2", status: "connected" },
+      ],
+      metrics: {
+        "srv-1": makeMetrics(),
+        "srv-2": makeMetrics(),
+      },
+    }
+
+    const action: MonitorAction = {
+      type: "remove_server",
+      data: { serverId: "srv-1" },
+    }
+
+    const state = monitorReducer(stateWithServers, action)
+
+    expect(state.servers).toHaveLength(1)
+    expect(state.servers[0].id).toBe("srv-2")
+    expect(state.metrics["srv-1"]).toBeUndefined()
+    expect(state.metrics["srv-2"]).toBeDefined()
+  })
 })
