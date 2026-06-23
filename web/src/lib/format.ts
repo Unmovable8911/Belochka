@@ -35,6 +35,18 @@ export function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`
 }
 
+export function formatUptime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0m'
+  const totalMinutes = Math.floor(seconds / 60)
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
 export type UsageColor = 'green' | 'yellow' | 'red'
 
 export function getUsageColor(percent: number): UsageColor {

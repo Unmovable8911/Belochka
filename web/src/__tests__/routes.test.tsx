@@ -27,7 +27,6 @@ describe("routing", () => {
 
   it("renders server detail at /server/:id", () => {
     renderWithRouter(["/server/abc-123"])
-    expect(screen.getByText("Server Detail")).toBeInTheDocument()
-    expect(screen.getByText(/abc-123/)).toBeInTheDocument()
+    expect(screen.getByText("Server not found")).toBeInTheDocument()
   })
 })

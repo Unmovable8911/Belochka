@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBytes, formatNetworkSpeed, formatPercent, getUsageColor } from '@/lib/format'
+import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime, getUsageColor } from '@/lib/format'
 
 describe('formatBytes', () => {
   it('formats bytes below 1 KiB as bytes', () => {
@@ -132,5 +132,30 @@ describe('getUsageColor', () => {
     expect(getUsageColor(NaN)).toBe('green')
     expect(getUsageColor(undefined as unknown as number)).toBe('green')
     expect(getUsageColor(150)).toBe('red')
+  })
+})
+
+describe('formatUptime', () => {
+  it('formats seconds into human-readable uptime', () => {
+    expect(formatUptime(90061)).toBe('1d 1h 1m')
+  })
+
+  it('omits zero-value higher units', () => {
+    expect(formatUptime(3600)).toBe('1h 0m')
+    expect(formatUptime(60)).toBe('1m')
+    expect(formatUptime(30)).toBe('0m')
+  })
+
+  it('formats days-only durations', () => {
+    expect(formatUptime(172800)).toBe('2d 0h 0m')
+  })
+
+  it('handles zero seconds', () => {
+    expect(formatUptime(0)).toBe('0m')
+  })
+
+  it('handles edge cases', () => {
+    expect(formatUptime(-1)).toBe('0m')
+    expect(formatUptime(NaN)).toBe('0m')
   })
 })
