@@ -15,7 +15,8 @@ import (
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
-	staticFS fs.FS
+	staticFS    fs.FS
+	serverStore ServerStore
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -23,6 +24,13 @@ type routerConfig struct {
 func WithStaticFS(fsys fs.FS) RouterOption {
 	return func(c *routerConfig) {
 		c.staticFS = fsys
+	}
+}
+
+// WithServerStore sets the store used by server CRUD endpoints.
+func WithServerStore(store ServerStore) RouterOption {
+	return func(c *routerConfig) {
+		c.serverStore = store
 	}
 }
 
@@ -37,6 +45,16 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 
 	r.Get("/api/health", handleHealth)
 	r.Get("/api/ws", h.ServeWS)
+
+	// Server CRUD endpoints
+	if cfg.serverStore != nil {
+		sh := &serverHandler{store: cfg.serverStore}
+		r.Post("/api/servers", sh.create)
+		r.Get("/api/servers", sh.list)
+		r.Get("/api/servers/{id}", sh.getByID)
+		r.Put("/api/servers/{id}", sh.update)
+		r.Delete("/api/servers/{id}", sh.delete)
+	}
 
 	// Mount embedded static file serving if available (production mode).
 	if handler := static.NewHandler(cfg.staticFS); handler != nil {
