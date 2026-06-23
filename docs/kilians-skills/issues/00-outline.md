@@ -5,7 +5,7 @@
 5. Add Server UI — blocked by: #4 — status: resolved
 6. Edit Server — blocked by: #5 — status: resolved
 7. Delete Server — blocked by: #5 — status: resolved
-8. Empty State Guidance — blocked by: #5 — status: pending
+8. Empty State Guidance — blocked by: #5 — status: resolved
 9. Metrics Parsers — blocked by: #1 — status: resolved
 10. Metrics Collector — blocked by: #4, #9 — status: resolved
 11. WebSocket Hub Server-Side — blocked by: #1 — status: resolved
