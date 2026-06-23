@@ -212,7 +212,7 @@ describe("WebSocketProvider", () => {
     expect(screen.getByTestId("server-srv-1-status").textContent).toBe("reconnecting")
   })
 
-  it("sets wsConnected to false on close and attempts reconnection", () => {
+  it("sets wsConnected to false on close and attempts reconnection with exponential backoff", () => {
     render(
       <WebSocketProvider>
         <StateDisplay />
@@ -229,12 +229,67 @@ describe("WebSocketProvider", () => {
     })
     expect(screen.getByTestId("ws-connected").textContent).toBe("false")
 
-    // Should create a new WebSocket after retry delay
+    // First reconnect attempt after 1s (initial backoff)
     const countBefore = wsInstances.length
     act(() => {
-      vi.advanceTimersByTime(3000)
+      vi.advanceTimersByTime(999)
     })
-    expect(wsInstances.length).toBeGreaterThan(countBefore)
+    expect(wsInstances.length).toBe(countBefore)
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(wsInstances.length).toBe(countBefore + 1)
+
+    // Second attempt: close again, should wait 2s
+    act(() => {
+      mockWs.onclose?.({ code: 1006 } as CloseEvent)
+    })
+    const countBefore2 = wsInstances.length
+    act(() => {
+      vi.advanceTimersByTime(1999)
+    })
+    expect(wsInstances.length).toBe(countBefore2)
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(wsInstances.length).toBe(countBefore2 + 1)
+  })
+
+  it("resets backoff delay after successful reconnection", () => {
+    render(
+      <WebSocketProvider>
+        <StateDisplay />
+      </WebSocketProvider>
+    )
+
+    // Connect, then disconnect
+    act(() => {
+      mockWs.onopen?.(new Event("open"))
+      mockWs.onclose?.({ code: 1006 } as CloseEvent)
+    })
+
+    // Wait for first reconnect (1s)
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    // Reconnect succeeds
+    act(() => {
+      mockWs.onopen?.(new Event("open"))
+    })
+    expect(screen.getByTestId("ws-connected").textContent).toBe("true")
+
+    // Disconnect again
+    act(() => {
+      mockWs.onclose?.({ code: 1006 } as CloseEvent)
+    })
+
+    // Backoff should be reset - first attempt should be 1s again, not 2s
+    const countBefore = wsInstances.length
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(wsInstances.length).toBe(countBefore + 1)
   })
 
   it("does not reconnect on normal close (code 1000)", () => {

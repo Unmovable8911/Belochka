@@ -5,8 +5,7 @@ import {
   initialMonitorState,
   type MonitorAction,
 } from "../hooks/useMonitorState"
-
-const RECONNECT_DELAY_MS = 3000
+import { getReconnectDelay } from "../lib/reconnect"
 
 function buildWsUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
@@ -18,6 +17,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intentionalCloseRef = useRef(false)
+  const reconnectAttemptRef = useRef(0)
 
   const connect = useCallback(() => {
     const ws = new WebSocket(buildWsUrl())
@@ -25,6 +25,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     intentionalCloseRef.current = false
 
     ws.onopen = () => {
+      reconnectAttemptRef.current = 0
       dispatch({ type: "ws_connected", data: true })
     }
 
@@ -46,9 +47,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
       // Reconnect on unexpected close (not code 1000 = normal closure)
       if (event.code !== 1000 && !intentionalCloseRef.current) {
+        const delay = getReconnectDelay(reconnectAttemptRef.current)
+        reconnectAttemptRef.current += 1
         reconnectTimerRef.current = setTimeout(() => {
           connect()
-        }, RECONNECT_DELAY_MS)
+        }, delay)
       }
     }
 
