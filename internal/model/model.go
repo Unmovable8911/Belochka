@@ -104,7 +104,7 @@ type SystemInfo struct {
 	CoreCount int
 }
 
-// Metrics is the top-level container for all metric types.
+// Metrics is the top-level container for all raw metric types from a single collection.
 type Metrics struct {
 	CPU     CPUMetrics
 	Memory  MemoryMetrics
@@ -112,4 +112,34 @@ type Metrics struct {
 	Network NetworkMetrics
 	Process ProcessMetrics
 	System  SystemInfo
+}
+
+// CPUUsage holds computed CPU usage percentages for one core (or aggregate).
+type CPUUsage struct {
+	Name       string  `json:"name"`
+	UsedPct    float64 `json:"used_pct"`    // user + nice + system + irq + softirq + steal
+	UserPct    float64 `json:"user_pct"`
+	SystemPct  float64 `json:"system_pct"`
+	IOWaitPct  float64 `json:"iowait_pct"`
+	StealPct   float64 `json:"steal_pct"`
+}
+
+// NetworkRate holds computed throughput for one interface.
+type NetworkRate struct {
+	Name      string  `json:"name"`
+	RxBytesPS float64 `json:"rx_bytes_ps"` // receive bytes per second
+	TxBytesPS float64 `json:"tx_bytes_ps"` // transmit bytes per second
+}
+
+// Snapshot holds computed metrics ready for broadcasting to clients.
+type Snapshot struct {
+	ServerID   string         `json:"server_id"`
+	CPU        []CPUUsage     `json:"cpu"`         // aggregate first, then per-core
+	Memory     MemoryMetrics  `json:"memory"`
+	Disk       DiskMetrics    `json:"disk"`
+	Network    []NetworkRate  `json:"network"`
+	Process    ProcessMetrics `json:"process"`
+	System     SystemInfo     `json:"system"`
+	CollectedAt time.Time    `json:"collected_at"`
+	Partial    bool           `json:"partial"` // true on first cycle (no rates available)
 }
