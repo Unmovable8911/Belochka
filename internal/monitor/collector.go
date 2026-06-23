@@ -38,11 +38,17 @@ type Collector struct {
 	executor SSHExecutor
 	opts     CollectorOptions
 
-	mu          sync.RWMutex
-	latest      *model.Snapshot
-	prevMetrics *model.Metrics
-	prevTime    time.Time
-	failures    int
+	// OnFailureThreshold is called when consecutive failures reach
+	// CollectionFailureThreshold (3). It fires once per threshold crossing.
+	// The failure count is passed as an argument.
+	OnFailureThreshold func(failures int)
+
+	mu               sync.RWMutex
+	latest           *model.Snapshot
+	prevMetrics      *model.Metrics
+	prevTime         time.Time
+	failures         int
+	thresholdFired   bool // true after OnFailureThreshold has been called
 }
 
 // NewCollector creates a new Collector for the given server.
@@ -72,6 +78,30 @@ func (c *Collector) Run(ctx context.Context) {
 	}
 }
 
+// recordFailure increments the failure counter and fires the threshold callback
+// when it crosses CollectionFailureThreshold. Returns the current failure count.
+func (c *Collector) recordFailure() int {
+	c.mu.Lock()
+	c.failures++
+	failures := c.failures
+	shouldFire := failures == 3 && !c.thresholdFired && c.OnFailureThreshold != nil
+	if failures >= 3 {
+		c.thresholdFired = true
+	}
+	c.mu.Unlock()
+
+	if failures >= 3 {
+		slog.Warn("3+ consecutive collection failures",
+			"server_id", c.serverID,
+			"failures", failures,
+		)
+	}
+	if shouldFire {
+		c.OnFailureThreshold(failures)
+	}
+	return failures
+}
+
 // collect performs a single collection cycle.
 func (c *Collector) collect(ctx context.Context) {
 	execCtx, cancel := context.WithTimeout(ctx, c.opts.Timeout)
@@ -80,34 +110,13 @@ func (c *Collector) collect(ctx context.Context) {
 	cmd := CollectCommand()
 	output, err := c.executor.Execute(execCtx, c.serverID, cmd)
 	if err != nil {
-		c.mu.Lock()
-		c.failures++
-		failures := c.failures
-		c.mu.Unlock()
-
-		if failures >= 3 {
-			slog.Warn("3+ consecutive collection failures",
-				"server_id", c.serverID,
-				"failures", failures,
-			)
-		}
+		c.recordFailure()
 		return
 	}
 
 	metrics, err := ParseCombinedOutput(output)
 	if err != nil {
-		c.mu.Lock()
-		c.failures++
-		failures := c.failures
-		c.mu.Unlock()
-
-		if failures >= 3 {
-			slog.Warn("3+ consecutive collection failures (parse error)",
-				"server_id", c.serverID,
-				"failures", failures,
-				"error", err,
-			)
-		}
+		c.recordFailure()
 		return
 	}
 
@@ -117,6 +126,7 @@ func (c *Collector) collect(ctx context.Context) {
 	defer c.mu.Unlock()
 
 	c.failures = 0
+	c.thresholdFired = false
 
 	if c.prevMetrics == nil {
 		// First cycle: partial snapshot (no deltas)

@@ -618,3 +618,110 @@ func searchSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestCollector_onFailureThresholdTriggered(t *testing.T) {
+	exec := &fakeExecutor{err: fmt.Errorf("ssh connection failed")}
+	triggered := make(chan int, 10)
+
+	c := NewCollector("srv-1", exec, CollectorOptions{
+		Interval: 50 * time.Millisecond,
+		Timeout:  1 * time.Second,
+	})
+	c.OnFailureThreshold = func(failures int) {
+		triggered <- failures
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go c.Run(ctx)
+
+	// Wait for the callback to fire
+	select {
+	case count := <-triggered:
+		if count < 3 {
+			t.Errorf("expected failure count >= 3, got %d", count)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out; OnFailureThreshold was not called")
+	}
+}
+
+func TestCollector_onFailureThresholdNotCalledBelowThreshold(t *testing.T) {
+	// Make it fail twice, then succeed. Threshold (3) should never be reached.
+	callNum := 0
+	exec := &switchableExecutor{
+		fn: func(ctx context.Context, serverID, cmd string) (string, error) {
+			callNum++
+			if callNum <= 2 {
+				return "", fmt.Errorf("fail")
+			}
+			return validCombinedOutput(), nil
+		},
+	}
+
+	triggered := make(chan int, 10)
+	c := NewCollector("srv-1", exec, CollectorOptions{
+		Interval: 50 * time.Millisecond,
+		Timeout:  1 * time.Second,
+	})
+	c.OnFailureThreshold = func(failures int) {
+		triggered <- failures
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go c.Run(ctx)
+
+	// Wait for success to occur (callNum > 3 means at least one success cycle)
+	time.Sleep(300 * time.Millisecond)
+
+	select {
+	case <-triggered:
+		t.Error("OnFailureThreshold should not be called when below threshold")
+	default:
+		// good
+	}
+}
+
+// switchableExecutor is a test double with a configurable function.
+type switchableExecutor struct {
+	fn func(ctx context.Context, serverID, cmd string) (string, error)
+}
+
+func (s *switchableExecutor) Execute(ctx context.Context, serverID, cmd string) (string, error) {
+	return s.fn(ctx, serverID, cmd)
+}
+
+func TestCollector_onFailureThresholdFiresOncePerCrossing(t *testing.T) {
+	exec := &fakeExecutor{err: fmt.Errorf("fail")}
+	triggered := make(chan int, 100)
+
+	c := NewCollector("srv-1", exec, CollectorOptions{
+		Interval: 20 * time.Millisecond,
+		Timeout:  1 * time.Second,
+	})
+	c.OnFailureThreshold = func(failures int) {
+		triggered <- failures
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go c.Run(ctx)
+
+	// Wait for several failures beyond the threshold
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+
+	// Should have been called exactly once (fires when crossing threshold, not on every subsequent failure)
+	close(triggered)
+	count := 0
+	for range triggered {
+		count++
+	}
+	if count != 1 {
+		t.Errorf("OnFailureThreshold called %d times, want exactly 1", count)
+	}
+}
