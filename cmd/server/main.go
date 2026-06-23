@@ -11,6 +11,7 @@ import (
 
 	"belochka/internal/api"
 	"belochka/internal/hub"
+	"belochka/web"
 )
 
 func main() {
@@ -19,7 +20,17 @@ func main() {
 
 	h := hub.New()
 
-	router := api.NewRouter(h)
+	var routerOpts []api.RouterOption
+
+	// Embed production frontend assets.
+	distFS, err := web.DistFS()
+	if err != nil {
+		slog.Error("failed to load embedded frontend assets", "error", err)
+		os.Exit(1)
+	}
+	routerOpts = append(routerOpts, api.WithStaticFS(distFS))
+
+	router := api.NewRouter(h, routerOpts...)
 
 	srv := &http.Server{
 		Addr:    ":53136",

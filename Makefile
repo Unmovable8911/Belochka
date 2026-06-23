@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend build
+.PHONY: dev-backend dev-frontend build clean
 
 dev-backend:
 	go run ./cmd/server/
@@ -7,6 +7,9 @@ dev-frontend:
 	cd web && npm run dev
 
 build:
-	@echo "Production build placeholder"
 	cd web && npm run build
-	go build -o belochka ./cmd/server/
+	mkdir -p bin
+	go build -o bin/belochka ./cmd/server/
+
+clean:
+	rm -rf bin web/dist
