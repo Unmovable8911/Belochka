@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"belochka/internal/model"
+	"belochka/internal/ssh"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -20,9 +22,15 @@ type ServerStore interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// serverHandler handles server CRUD endpoints.
+// SSHTester tests SSH connectivity to a server.
+type SSHTester interface {
+	TestConnection(srv model.Server) (ssh.TestResult, error)
+}
+
+// serverHandler handles server CRUD and test endpoints.
 type serverHandler struct {
-	store ServerStore
+	store  ServerStore
+	tester SSHTester
 }
 
 // errorBody is the unified error response format.
@@ -170,6 +178,33 @@ func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	srv, err := h.store.GetByID(r.Context(), id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "not_found", "Server not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
+		return
+	}
+
+	result, err := h.tester.TestConnection(srv)
+	if err != nil {
+		var connErr *ssh.ConnectionError
+		if errors.As(err, &connErr) {
+			writeError(w, http.StatusUnprocessableEntity, string(connErr.Kind), connErr.Message)
+			return
+		}
+		writeError(w, http.StatusUnprocessableEntity, "connection_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func validateServer(srv model.Server) []string {

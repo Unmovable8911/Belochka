@@ -12,6 +12,7 @@ import (
 	"belochka/internal/api"
 	"belochka/internal/hub"
 	"belochka/internal/model"
+	"belochka/internal/ssh"
 )
 
 // mockStore implements api.ServerStore for testing.
@@ -69,9 +70,24 @@ func (m *mockStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// mockSSHTester implements api.SSHTester for testing.
+type mockSSHTester struct {
+	result ssh.TestResult
+	err    error
+}
+
+func (m *mockSSHTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
+	return m.result, m.err
+}
+
 func setupRouter(store api.ServerStore) http.Handler {
 	h := hub.New()
 	return api.NewRouter(h, api.WithServerStore(store))
+}
+
+func setupRouterWithSSH(store api.ServerStore, tester api.SSHTester) http.Handler {
+	h := hub.New()
+	return api.NewRouter(h, api.WithServerStore(store), api.WithSSHTester(tester))
 }
 
 func TestListServers_ReturnsAllWithoutPasswords(t *testing.T) {
@@ -428,5 +444,178 @@ func TestCreateServer_ReturnsCreatedWithoutPassword(t *testing.T) {
 	}
 	if resp["id"] == nil || resp["id"] == "" {
 		t.Fatal("expected non-empty id in response")
+	}
+}
+
+func createTestServer(t *testing.T, router http.Handler) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]interface{}{
+		"name": "web-1", "host": "10.0.0.1", "port": 22,
+		"username": "deploy", "password": "secret",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup: expected 201, got %d", rec.Code)
+	}
+	var created map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&created)
+	return created["id"].(string)
+}
+
+func TestTestServer_Success_ReturnsFingerprint(t *testing.T) {
+	store := newMockStore()
+	tester := &mockSSHTester{
+		result: ssh.TestResult{Fingerprint: "SHA256:abc123"},
+	}
+	router := setupRouterWithSSH(store, tester)
+
+	id := createTestServer(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp["fingerprint"] != "SHA256:abc123" {
+		t.Fatalf("expected fingerprint SHA256:abc123, got %v", resp["fingerprint"])
+	}
+}
+
+func TestTestServer_NotFound(t *testing.T) {
+	store := newMockStore()
+	tester := &mockSSHTester{}
+	router := setupRouterWithSSH(store, tester)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/nonexistent/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestTestServer_AuthFailure_Returns422(t *testing.T) {
+	store := newMockStore()
+	tester := &mockSSHTester{
+		err: &ssh.ConnectionError{
+			Kind:    ssh.ErrAuth,
+			Message: "authentication failed",
+		},
+	}
+	router := setupRouterWithSSH(store, tester)
+
+	id := createTestServer(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "auth_failed" {
+		t.Fatalf("expected error code auth_failed, got %v", errObj["code"])
+	}
+}
+
+func TestTestServer_HostKeyMismatch_Returns422(t *testing.T) {
+	store := newMockStore()
+	tester := &mockSSHTester{
+		err: &ssh.ConnectionError{
+			Kind:    ssh.ErrHostKey,
+			Message: "host key mismatch",
+		},
+	}
+	router := setupRouterWithSSH(store, tester)
+
+	id := createTestServer(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "host_key_mismatch" {
+		t.Fatalf("expected error code host_key_mismatch, got %v", errObj["code"])
+	}
+}
+
+func TestTestServer_NetworkError_Returns422(t *testing.T) {
+	store := newMockStore()
+	tester := &mockSSHTester{
+		err: &ssh.ConnectionError{
+			Kind:    ssh.ErrNetwork,
+			Message: "connection refused",
+		},
+	}
+	router := setupRouterWithSSH(store, tester)
+
+	id := createTestServer(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "network_error" {
+		t.Fatalf("expected error code network_error, got %v", errObj["code"])
+	}
+}
+
+func TestTestServer_PassphraseKey_Returns422(t *testing.T) {
+	store := newMockStore()
+	tester := &mockSSHTester{
+		err: &ssh.ConnectionError{
+			Kind:    ssh.ErrPassphrase,
+			Message: "key file is passphrase-protected; passphrase-protected keys are not supported",
+		},
+	}
+	router := setupRouterWithSSH(store, tester)
+
+	id := createTestServer(t, router)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "passphrase_protected_key" {
+		t.Fatalf("expected error code passphrase_protected_key, got %v", errObj["code"])
 	}
 }

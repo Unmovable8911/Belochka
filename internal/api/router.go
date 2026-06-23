@@ -17,6 +17,7 @@ type RouterOption func(*routerConfig)
 type routerConfig struct {
 	staticFS    fs.FS
 	serverStore ServerStore
+	sshTester   SSHTester
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -34,6 +35,13 @@ func WithServerStore(store ServerStore) RouterOption {
 	}
 }
 
+// WithSSHTester sets the SSH tester used by the connection test endpoint.
+func WithSSHTester(tester SSHTester) RouterOption {
+	return func(c *routerConfig) {
+		c.sshTester = tester
+	}
+}
+
 // NewRouter creates and returns the application HTTP router with all routes mounted.
 func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	var cfg routerConfig
@@ -46,14 +54,17 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	r.Get("/api/health", handleHealth)
 	r.Get("/api/ws", h.ServeWS)
 
-	// Server CRUD endpoints
+	// Server CRUD and test endpoints
 	if cfg.serverStore != nil {
-		sh := &serverHandler{store: cfg.serverStore}
+		sh := &serverHandler{store: cfg.serverStore, tester: cfg.sshTester}
 		r.Post("/api/servers", sh.create)
 		r.Get("/api/servers", sh.list)
 		r.Get("/api/servers/{id}", sh.getByID)
 		r.Put("/api/servers/{id}", sh.update)
 		r.Delete("/api/servers/{id}", sh.delete)
+		if cfg.sshTester != nil {
+			r.Post("/api/servers/{id}/test", sh.testConnection)
+		}
 	}
 
 	// Mount embedded static file serving if available (production mode).
