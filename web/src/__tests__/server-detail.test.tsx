@@ -200,9 +200,11 @@ describe("ServerDetail", () => {
     expect(screen.getByText("85.0%")).toBeInTheDocument()
     expect(screen.getByText("10.0%")).toBeInTheDocument()
 
-    // Progress bars with correct aria-labels
-    const bars = screen.getAllByRole("progressbar")
-    expect(bars).toHaveLength(4)
+    // Core progress bars (disk partitions also have progressbars)
+    const coreBars = screen.getAllByRole("progressbar").filter(
+      (bar) => bar.getAttribute("aria-label")?.startsWith("Core ")
+    )
+    expect(coreBars).toHaveLength(4)
 
     // Check color coding on core bars
     const core0Bar = screen.getByRole("progressbar", { name: /core 0/i })
@@ -258,5 +260,208 @@ describe("ServerDetail", () => {
     // Still has back link
     const backLink = screen.getByRole("link", { name: /back to dashboard/i })
     expect(backLink).toHaveAttribute("href", "/")
+  })
+
+  it("shows memory ring gauge with usage percentage and color", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: {
+        "srv-1": makeMetrics({
+          memory: {
+            total: 8 * 1024 * 1024 * 1024,
+            used: 6 * 1024 * 1024 * 1024,
+            available: 2 * 1024 * 1024 * 1024,
+            swapTotal: 2 * 1024 * 1024 * 1024,
+            swapUsed: 512 * 1024 * 1024,
+          },
+        }),
+      },
+    }
+    renderDetail(state)
+
+    const ring = screen.getByTestId("memory-ring-gauge")
+    expect(ring).toBeInTheDocument()
+    // 6/8 = 75%, should be yellow
+    expect(ring.dataset.color).toBe("yellow")
+    expect(ring.style.background).toContain("conic-gradient")
+    expect(ring.style.background).toContain("75.0%")
+    expect(screen.getByText("75.0%")).toBeInTheDocument()
+  })
+
+  it("displays memory used/total in human-readable units", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: {
+        "srv-1": makeMetrics({
+          memory: {
+            total: 16 * 1024 * 1024 * 1024, // 16 GiB
+            used: 12 * 1024 * 1024 * 1024, // 12 GiB
+            available: 4 * 1024 * 1024 * 1024,
+            swapTotal: 0,
+            swapUsed: 0,
+          },
+        }),
+      },
+    }
+    renderDetail(state)
+
+    expect(screen.getByText("12.0 GiB / 16.0 GiB")).toBeInTheDocument()
+  })
+
+  it("shows swap used/total when swap is configured", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: {
+        "srv-1": makeMetrics({
+          memory: {
+            total: 8 * 1024 * 1024 * 1024,
+            used: 4 * 1024 * 1024 * 1024,
+            available: 4 * 1024 * 1024 * 1024,
+            swapTotal: 2 * 1024 * 1024 * 1024,
+            swapUsed: 512 * 1024 * 1024,
+          },
+        }),
+      },
+    }
+    renderDetail(state)
+
+    const swapInfo = screen.getByTestId("swap-info")
+    expect(swapInfo).toBeInTheDocument()
+    expect(swapInfo.textContent).toContain("512.0 MiB")
+    expect(swapInfo.textContent).toContain("2.0 GiB")
+  })
+
+  it("hides swap info when no swap is configured", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: {
+        "srv-1": makeMetrics({
+          memory: {
+            total: 8 * 1024 * 1024 * 1024,
+            used: 4 * 1024 * 1024 * 1024,
+            available: 4 * 1024 * 1024 * 1024,
+            swapTotal: 0,
+            swapUsed: 0,
+          },
+        }),
+      },
+    }
+    renderDetail(state)
+
+    expect(screen.queryByTestId("swap-info")).toBeNull()
+  })
+
+  it("renders disk partitions with mount point, usage bar, and used/total", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: {
+        "srv-1": makeMetrics({
+          disk: {
+            partitions: [
+              {
+                filesystem: "/dev/sda1",
+                mountPoint: "/",
+                total: 100 * 1024 * 1024 * 1024,
+                used: 60 * 1024 * 1024 * 1024,
+                available: 40 * 1024 * 1024 * 1024,
+              },
+              {
+                filesystem: "/dev/sdb1",
+                mountPoint: "/data",
+                total: 500 * 1024 * 1024 * 1024,
+                used: 450 * 1024 * 1024 * 1024,
+                available: 50 * 1024 * 1024 * 1024,
+              },
+            ],
+          },
+        }),
+      },
+    }
+    renderDetail(state)
+
+    // Mount point labels
+    expect(screen.getByText("/")).toBeInTheDocument()
+    expect(screen.getByText("/data")).toBeInTheDocument()
+
+    // Used/total values
+    expect(screen.getByText("60.0 GiB / 100.0 GiB")).toBeInTheDocument()
+    expect(screen.getByText("450.0 GiB / 500.0 GiB")).toBeInTheDocument()
+
+    // Progress bars for disk partitions
+    const rootBar = screen.getByRole("progressbar", { name: "/ usage" })
+    expect(rootBar).toBeInTheDocument()
+    const dataBar = screen.getByRole("progressbar", { name: "/data usage" })
+    expect(dataBar).toBeInTheDocument()
+  })
+
+  it("applies color thresholds to disk usage bars", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: {
+        "srv-1": makeMetrics({
+          disk: {
+            partitions: [
+              {
+                filesystem: "/dev/sda1",
+                mountPoint: "/",
+                total: 100 * 1024 * 1024 * 1024,
+                used: 30 * 1024 * 1024 * 1024, // 30% -> green
+                available: 70 * 1024 * 1024 * 1024,
+              },
+              {
+                filesystem: "/dev/sdb1",
+                mountPoint: "/var",
+                total: 100 * 1024 * 1024 * 1024,
+                used: 70 * 1024 * 1024 * 1024, // 70% -> yellow
+                available: 30 * 1024 * 1024 * 1024,
+              },
+              {
+                filesystem: "/dev/sdc1",
+                mountPoint: "/data",
+                total: 100 * 1024 * 1024 * 1024,
+                used: 90 * 1024 * 1024 * 1024, // 90% -> red
+                available: 10 * 1024 * 1024 * 1024,
+              },
+            ],
+          },
+        }),
+      },
+    }
+    renderDetail(state)
+
+    const rootBar = screen.getByRole("progressbar", { name: "/ usage" })
+    expect(rootBar.dataset.color).toBe("green")
+
+    const varBar = screen.getByRole("progressbar", { name: "/var usage" })
+    expect(varBar.dataset.color).toBe("yellow")
+
+    const dataBar = screen.getByRole("progressbar", { name: "/data usage" })
+    expect(dataBar.dataset.color).toBe("red")
+  })
+
+  it("renders metrics in a 2x2 grid layout", () => {
+    const state: MonitorState = {
+      ...initialMonitorState,
+      servers: [makeServer({ id: "srv-1" })],
+      metrics: { "srv-1": makeMetrics() },
+    }
+    renderDetail(state)
+
+    const grid = screen.getByTestId("metrics-grid")
+    expect(grid).toBeInTheDocument()
+    // Grid has the 2-column class for md breakpoint
+    expect(grid.className).toContain("grid")
+    expect(grid.className).toContain("md:grid-cols-2")
+
+    // All four sections present: CPU, Memory, Disk, Network
+    expect(screen.getByText("CPU")).toBeInTheDocument()
+    expect(screen.getByText("Memory")).toBeInTheDocument()
+    expect(screen.getByText("Disk")).toBeInTheDocument()
   })
 })
