@@ -1,0 +1,98 @@
+{
+  "dashboard": {
+    "title": "仪表盘",
+    "noServers": "未配置服务器",
+    "noServersHint": "添加服务器以开始监控其 CPU、内存、磁盘和网络指标。",
+    "addFirstServer": "添加您的第一台服务器"
+  },
+  "serverDetail": {
+    "backToDashboard": "返回仪表盘",
+    "notFound": "未找到服务器",
+    "notFoundHint": "您查找的服务器不存在或已被移除。",
+    "hostname": "主机名",
+    "kernel": "内核",
+    "uptime": "运行时间",
+    "os": "操作系统",
+    "cores": "核心数",
+    "cpu": "CPU",
+    "memory": "内存",
+    "disk": "磁盘",
+    "network": "网络",
+    "processes": "进程",
+    "noProcessData": "暂无进程数据。",
+    "delete": "删除",
+    "console": "控制台",
+    "swap": "交换空间"
+  },
+  "serverCard": {
+    "cpu": "CPU",
+    "memory": "内存",
+    "disk": "磁盘",
+    "network": "网络",
+    "connecting": "连接中...",
+    "reconnecting": "重新连接中 ({{attempts}}/∞)",
+    "authFailed": "认证失败 - 请检查配置",
+    "hostKeyMismatch": "主机密钥不匹配 - 请检查配置"
+  },
+  "addServer": {
+    "title": "添加服务器",
+    "trigger": "添加服务器",
+    "name": "名称",
+    "host": "主机",
+    "port": "端口",
+    "username": "用户名",
+    "authentication": "认证方式",
+    "password": "密码",
+    "keyFilePath": "密钥文件路径",
+    "hostKeyFingerprint": "主机密钥指纹",
+    "trustThisHost": "信任此主机",
+    "hostTrusted": "已信任主机",
+    "testConnection": "测试连接",
+    "testing": "测试中...",
+    "save": "保存",
+    "saving": "保存中...",
+    "savedSuccess": "服务器 \"{{name}}\" 添加成功",
+    "connectionTestFailed": "连接测试失败",
+    "saveFailed": "保存服务器失败"
+  },
+  "editServer": {
+    "title": "编辑服务器",
+    "retestRequired": "连接字段已更改。保存前需要重新测试。",
+    "savedSuccess": "服务器 \"{{name}}\" 更新成功"
+  },
+  "deleteServer": {
+    "title": "删除服务器",
+    "confirm": "确定要删除 <strong>{{name}}</strong> 吗？此操作无法撤销。",
+    "deletedSuccess": "服务器 \"{{name}}\" 已删除",
+    "deleteFailed": "删除服务器失败",
+    "deleting": "删除中..."
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "close": "关闭"
+  },
+  "connection": {
+    "lost": "连接已断开，正在重新连接..."
+  },
+  "processTable": {
+    "pid": "PID",
+    "user": "用户",
+    "cpuPct": "CPU%",
+    "memPct": "内存%",
+    "command": "命令"
+  },
+  "console": {
+    "authPassword": "密码",
+    "authKey": "密钥",
+    "statusConnected": "已连接",
+    "statusConnecting": "连接中...",
+    "statusDisconnected": "已断开",
+    "disconnectedMessage": "会话已断开。",
+    "reconnect": "重新连接"
+  },
+  "language": {
+    "label": "语言"
+  }
+}
