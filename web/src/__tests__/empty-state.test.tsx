@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, cleanup } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter } from "react-router-dom"
 import { MonitorContext, initialMonitorState, type MonitorState, type MonitorAction } from "../hooks/useMonitorState"
 import Dashboard from "../pages/Dashboard"
 import type { Dispatch } from "react"
@@ -8,17 +9,21 @@ import type { Dispatch } from "react"
 function renderDashboard(state: MonitorState = initialMonitorState) {
   const dispatch: Dispatch<MonitorAction> = vi.fn()
   const result = render(
-    <MonitorContext value={{ state, dispatch }}>
-      <Dashboard />
-    </MonitorContext>
+    <MemoryRouter>
+      <MonitorContext value={{ state, dispatch }}>
+        <Dashboard />
+      </MonitorContext>
+    </MemoryRouter>
   )
   return {
     ...result,
     rerenderWithState(newState: MonitorState) {
       result.rerender(
-        <MonitorContext value={{ state: newState, dispatch }}>
-          <Dashboard />
-        </MonitorContext>
+        <MemoryRouter>
+          <MonitorContext value={{ state: newState, dispatch }}>
+            <Dashboard />
+          </MonitorContext>
+        </MemoryRouter>
       )
     },
   }

@@ -1,44 +1,11 @@
-import { useState } from "react"
-import { ServerIcon, Trash2Icon, PencilIcon } from "lucide-react"
+import { ServerIcon } from "lucide-react"
 import { AddServerDialog } from "@/components/AddServerDialog"
-import { DeleteServerDialog } from "@/components/DeleteServerDialog"
-import { EditServerDialog, type ServerData } from "@/components/EditServerDialog"
-import { useMonitorState, type ServerInfo } from "@/hooks/useMonitorState"
-import { Button } from "@/components/ui/button"
+import { ServerCard } from "@/components/ServerCard"
+import { useMonitorState } from "@/hooks/useMonitorState"
 
 export default function Dashboard() {
-  const { state, dispatch } = useMonitorState()
+  const { state } = useMonitorState()
   const hasServers = state.servers.length > 0
-  const [serverToDelete, setServerToDelete] = useState<ServerInfo | null>(null)
-  const [serverToEdit, setServerToEdit] = useState<ServerData | null>(null)
-  const [editLoading, setEditLoading] = useState<string | null>(null)
-
-  function handleDeleted(serverId: string) {
-    dispatch({ type: "remove_server", data: { serverId } })
-    setServerToDelete(null)
-  }
-
-  function handleServerUpdated(updated: ServerData) {
-    dispatch({
-      type: "update_server",
-      data: { serverId: updated.id, name: updated.name, host: updated.host },
-    })
-    setServerToEdit(null)
-  }
-
-  async function handleEditClick(server: ServerInfo) {
-    setEditLoading(server.id)
-    try {
-      const res = await fetch(`/api/servers/${server.id}`)
-      if (!res.ok) throw new Error("Failed to fetch server details")
-      const data: ServerData = await res.json()
-      setServerToEdit(data)
-    } catch {
-      // Silently fail for now; toast could be added
-    } finally {
-      setEditLoading(null)
-    }
-  }
 
   return (
     <div className="p-6">
@@ -47,36 +14,16 @@ export default function Dashboard() {
         {hasServers && <AddServerDialog />}
       </div>
       {hasServers ? (
-        <div className="space-y-2">
+        <div
+          data-testid="server-grid"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+        >
           {state.servers.map((server) => (
-            <div
+            <ServerCard
               key={server.id}
-              className="flex items-center justify-between rounded-lg border p-4"
-            >
-              <div>
-                <p className="font-medium">{server.name}</p>
-                <p className="text-sm text-muted-foreground">{server.host}</p>
-              </div>
-              <div className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleEditClick(server)}
-                  disabled={editLoading === server.id}
-                  aria-label={`Edit ${server.name}`}
-                >
-                  <PencilIcon className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setServerToDelete(server)}
-                  aria-label={`Delete ${server.name}`}
-                >
-                  <Trash2Icon className="size-4" />
-                </Button>
-              </div>
-            </div>
+              server={server}
+              metrics={state.metrics[server.id]}
+            />
           ))}
         </div>
       ) : (
@@ -88,28 +35,6 @@ export default function Dashboard() {
           </p>
           <AddServerDialog triggerLabel="Add your first server" />
         </div>
-      )}
-
-      {serverToDelete && (
-        <DeleteServerDialog
-          server={serverToDelete}
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setServerToDelete(null)
-          }}
-          onDeleted={handleDeleted}
-        />
-      )}
-
-      {serverToEdit && (
-        <EditServerDialog
-          server={serverToEdit}
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setServerToEdit(null)
-          }}
-          onServerUpdated={handleServerUpdated}
-        />
       )}
     </div>
   )

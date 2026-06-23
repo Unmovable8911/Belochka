@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, cleanup, within } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
+import { render, screen, cleanup } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { MonitorContext, initialMonitorState, type MonitorState, type MonitorAction } from "../hooks/useMonitorState"
 import Dashboard from "../pages/Dashboard"
@@ -28,7 +27,7 @@ const stateWithServers: MonitorState = {
   ],
 }
 
-describe("Delete Server from Dashboard", () => {
+describe("Dashboard server cards", () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
@@ -37,49 +36,26 @@ describe("Delete Server from Dashboard", () => {
     cleanup()
   })
 
-  it("shows a delete button for each server in the list", () => {
+  it("renders clickable server cards linking to detail pages", () => {
     renderDashboard(stateWithServers)
 
-    const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
-    expect(deleteButtons.length).toBeGreaterThanOrEqual(2)
+    const links = screen.getAllByRole("link")
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveAttribute("href", "/server/srv-1")
+    expect(links[1]).toHaveAttribute("href", "/server/srv-2")
   })
 
-  it("opens confirmation dialog with server name when delete button is clicked", async () => {
-    const user = userEvent.setup()
+  it("shows server names in the card grid", () => {
     renderDashboard(stateWithServers)
 
-    // Find the delete button associated with "Production Web"
-    const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
-    await user.click(deleteButtons[0])
-
-    const dialog = screen.getByRole("dialog")
-    expect(dialog).toHaveTextContent("Production Web")
-    expect(dialog).toHaveTextContent(/are you sure/i)
+    expect(screen.getByText("Production Web")).toBeInTheDocument()
+    expect(screen.getByText("Database")).toBeInTheDocument()
   })
 
-  it("dispatches remove_server and removes server from list after successful delete", async () => {
-    const user = userEvent.setup()
-    const dispatch = vi.fn()
+  it("shows server status badges", () => {
+    renderDashboard(stateWithServers)
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 204 })
-    )
-
-    renderDashboard(stateWithServers, dispatch)
-
-    // Click delete on the first server
-    const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
-    await user.click(deleteButtons[0])
-
-    // Confirm deletion in the dialog
-    const dialog = screen.getByRole("dialog")
-    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }))
-
-    await vi.waitFor(() => {
-      expect(dispatch).toHaveBeenCalledWith({
-        type: "remove_server",
-        data: { serverId: "srv-1" },
-      })
-    })
+    expect(screen.getByText("connected")).toBeInTheDocument()
+    expect(screen.getByText("disconnected")).toBeInTheDocument()
   })
 })

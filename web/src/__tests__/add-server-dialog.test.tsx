@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, cleanup, within, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter } from "react-router-dom"
 import Dashboard from "../pages/Dashboard"
 import { AddServerDialog } from "../components/AddServerDialog"
 import { MonitorContext, initialMonitorState, type MonitorState } from "../hooks/useMonitorState"
@@ -13,9 +14,11 @@ const stateWithServers: MonitorState = {
 async function openAddServerDialog() {
   const user = userEvent.setup()
   render(
-    <MonitorContext value={{ state: stateWithServers, dispatch: vi.fn() }}>
-      <Dashboard />
-    </MonitorContext>
+    <MemoryRouter>
+      <MonitorContext value={{ state: stateWithServers, dispatch: vi.fn() }}>
+        <Dashboard />
+      </MonitorContext>
+    </MemoryRouter>
   )
 
   const addButton = screen.getByRole("button", { name: /add server/i })

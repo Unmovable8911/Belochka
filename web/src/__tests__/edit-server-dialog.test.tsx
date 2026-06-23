@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, cleanup, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter } from "react-router-dom"
 import { EditServerDialog, type EditServerDialogProps } from "../components/EditServerDialog"
 import Dashboard from "../pages/Dashboard"
 import { MonitorContext, type MonitorState, type MonitorAction } from "../hooks/useMonitorState"
@@ -311,14 +312,16 @@ function renderDashboardWithServers() {
   }
   const dispatch: Dispatch<MonitorAction> = vi.fn()
   render(
-    <MonitorContext.Provider value={{ state: stateWithServers, dispatch }}>
-      <Dashboard />
-    </MonitorContext.Provider>
+    <MemoryRouter>
+      <MonitorContext.Provider value={{ state: stateWithServers, dispatch }}>
+        <Dashboard />
+      </MonitorContext.Provider>
+    </MemoryRouter>
   )
   return { dispatch }
 }
 
-describe("Edit button in Dashboard", () => {
+describe("Server cards in Dashboard", () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
@@ -327,41 +330,21 @@ describe("Edit button in Dashboard", () => {
     cleanup()
   })
 
-  it("shows an edit button for each server in the list", () => {
+  it("shows a clickable card for each server linking to detail page", () => {
     renderDashboardWithServers()
 
-    const editButtons = screen.getAllByRole("button", { name: /edit/i })
-    expect(editButtons.length).toBe(2)
+    const links = screen.getAllByRole("link")
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveAttribute("href", "/server/srv-1")
+    expect(links[1]).toHaveAttribute("href", "/server/srv-2")
   })
 
-  it("opens edit dialog when edit button is clicked", async () => {
-    const user = userEvent.setup()
+  it("displays server names and hosts in cards", () => {
     renderDashboardWithServers()
 
-    // Mock fetch for the GET server details request
-    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
-      return new Response(
-        JSON.stringify({
-          id: "srv-1",
-          name: "Production Web",
-          host: "192.168.1.100",
-          port: 22,
-          username: "root",
-          auth_type: "password",
-          host_key_fingerprint: "SHA256:existingfp",
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      )
-    })
-
-    const editButtons = screen.getAllByRole("button", { name: /edit/i })
-    await user.click(editButtons[0])
-
-    // Wait for dialog to appear (server details are fetched)
-    const dialog = await screen.findByRole("dialog")
-    expect(dialog).toBeInTheDocument()
-    expect(within(dialog).getByText("Edit Server")).toBeInTheDocument()
+    expect(screen.getByText("Production Web")).toBeInTheDocument()
+    expect(screen.getByText("192.168.1.100")).toBeInTheDocument()
+    expect(screen.getByText("Staging DB")).toBeInTheDocument()
+    expect(screen.getByText("10.0.0.50")).toBeInTheDocument()
   })
 })
