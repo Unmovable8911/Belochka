@@ -335,10 +335,17 @@ func TestGracefulShutdownClosesClients(t *testing.T) {
 	// Cancel the hub context (simulates graceful shutdown).
 	cancel()
 
-	// The client should get disconnected: a read should fail.
+	// The client should receive a close frame with code 1001 (Going Away).
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, _, err := conn.ReadMessage()
 	if err == nil {
 		t.Fatal("expected read error after hub shutdown, got none")
+	}
+	closeErr, ok := err.(*websocket.CloseError)
+	if !ok {
+		t.Fatalf("expected CloseError, got %T: %v", err, err)
+	}
+	if closeErr.Code != websocket.CloseGoingAway {
+		t.Fatalf("expected close code 1001 (Going Away), got %d", closeErr.Code)
 	}
 }

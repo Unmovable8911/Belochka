@@ -97,8 +97,12 @@ func newSQLiteStoreWithKey(dbPath string, key []byte) (*SQLiteStore, error) {
 	return &SQLiteStore{db: db, key: key}, nil
 }
 
-// Close closes the underlying database connection.
+// Close checkpoints the WAL and closes the underlying database connection.
 func (s *SQLiteStore) Close() error {
+	_, err := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if err != nil {
+		slog.Warn("WAL checkpoint failed", "error", err)
+	}
 	return s.db.Close()
 }
 

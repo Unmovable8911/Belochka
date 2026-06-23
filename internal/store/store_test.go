@@ -101,6 +101,39 @@ func TestStoreWALModeEnabled(t *testing.T) {
 	}
 }
 
+func TestCloseCheckpointsWAL(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, "testkey")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Insert data to generate WAL entries.
+	_, err = s.db.ExecContext(context.Background(),
+		"INSERT INTO servers (id, name, host, port, auth_type, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
+		"test-id", "test", "localhost", 22, "password", "root",
+	)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Close should checkpoint WAL, leaving an empty (or absent) WAL file.
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// After checkpoint-and-close, the WAL file should be empty or absent.
+	walPath := dir + "/belochka.db-wal"
+	info, err := statFile(walPath)
+	if err != nil {
+		// WAL file absent is fine — checkpoint succeeded.
+		return
+	}
+	if info.Size() > 0 {
+		t.Errorf("WAL file not checkpointed: size = %d bytes", info.Size())
+	}
+}
+
 func TestStoreOpenCreatesDataDirectory(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := dir + "/nested/data"

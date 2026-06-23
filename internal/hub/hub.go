@@ -70,6 +70,9 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			h.mu.Lock()
 			for c := range h.clients {
+				// Send a close frame (1001 Going Away) before disconnecting.
+				msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
+				c.conn.WriteMessage(websocket.CloseMessage, msg)
 				close(c.send)
 				delete(h.clients, c)
 			}

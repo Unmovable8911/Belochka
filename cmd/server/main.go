@@ -14,8 +14,11 @@ import (
 	"belochka/internal/api"
 	"belochka/internal/config"
 	"belochka/internal/hub"
+	"belochka/internal/shutdown"
 	"belochka/web"
 )
+
+const shutdownTimeout = 10 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -53,7 +56,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	go h.Run(ctx)
+	hubCtx, hubCancel := context.WithCancel(ctx)
+
+	go h.Run(hubCtx)
 
 	go func() {
 		slog.Info("starting server", "addr", srv.Addr, "data_dir", cfg.DataDir)
@@ -64,13 +69,32 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	slog.Info("shutting down server")
+	slog.Info("shutting down")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	seq := shutdown.NewSequence(shutdownTimeout)
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("shutdown failed", "error", err)
+	// Step 1: Stop accepting new HTTP connections.
+	seq.Add("http", func(ctx context.Context) error {
+		return srv.Shutdown(ctx)
+	})
+
+	// Step 2: Close WebSocket connections (sends close frames).
+	seq.Add("websocket", func(ctx context.Context) error {
+		hubCancel()
+		return nil
+	})
+
+	// Step 3: Stop all collector goroutines.
+	// (monitor.Manager is wired here when available)
+
+	// Step 4: Close all SSH connections.
+	// (SSH pool is closed here when available)
+
+	// Step 5: Close SQLite database (WAL checkpoint).
+	// (store.Close is called here when available)
+
+	if err := seq.Run(context.Background()); err != nil {
+		slog.Error("graceful shutdown completed with errors", "error", err)
 		os.Exit(1)
 	}
 
