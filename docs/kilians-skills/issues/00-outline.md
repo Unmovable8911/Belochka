@@ -7,7 +7,7 @@
 7. Delete Server — blocked by: #5 — status: pending
 8. Empty State Guidance — blocked by: #5 — status: pending
 9. Metrics Parsers — blocked by: #1 — status: resolved
-10. Metrics Collector — blocked by: #4, #9 — status: pending
+10. Metrics Collector — blocked by: #4, #9 — status: resolved
 11. WebSocket Hub Server-Side — blocked by: #1 — status: resolved
 12. React WebSocket State Management — blocked by: #11 — status: resolved
 13. Data Formatting Utilities — blocked by: #1 — status: resolved
