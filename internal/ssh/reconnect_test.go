@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"belochka/internal/clock"
 )
 
 func TestBackoff_exponentialSequence(t *testing.T) {
@@ -91,36 +93,15 @@ func (f *fakeConnector) setError(err error) {
 	f.err = err
 }
 
-// delayRecorder records backoff delays requested without actually sleeping.
-type delayRecorder struct {
-	mu     sync.Mutex
-	delays []time.Duration
-}
+var t0 = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
-func (d *delayRecorder) sleep(ctx context.Context, dur time.Duration) error {
-	d.mu.Lock()
-	d.delays = append(d.delays, dur)
-	d.mu.Unlock()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return nil
-}
-
-func (d *delayRecorder) getDelays() []time.Duration {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	out := make([]time.Duration, len(d.delays))
-	copy(out, d.delays)
-	return out
-}
-
-// newFastReconnector creates a Reconnector with instant sleeps for testing.
-func newFastReconnector(connect ConnectFunc) (*Reconnector, *delayRecorder) {
+// newFastReconnector creates a Reconnector with a FakeClock for testing.
+// Sleep is non-blocking, so the reconnection loop runs at full speed.
+func newFastReconnector(connect ConnectFunc) (*Reconnector, *clock.Fake) {
+	clk := clock.NewFake(t0)
 	r := NewReconnector(connect)
-	dr := &delayRecorder{}
-	r.sleepFn = dr.sleep
-	return r, dr
+	r.clock = clk
+	return r, clk
 }
 
 func TestReconnector_reconnectsOnRetryableError(t *testing.T) {
@@ -298,17 +279,15 @@ func TestReconnector_attemptCountTracked(t *testing.T) {
 }
 
 func TestReconnector_backoffDelaysAreCorrect(t *testing.T) {
-	// Fail 6 times to verify the full backoff schedule is used
 	callCount := 0
 	fc := &fakeConnector{}
 	fc.err = &ConnectionError{Kind: ErrNetwork, Message: "refused"}
 
-	r, dr := newFastReconnector(func(ctx context.Context) error {
+	r, clk := newFastReconnector(func(ctx context.Context) error {
 		e := fc.connect(ctx)
 		fc.mu.Lock()
 		callCount = fc.attempts
 		fc.mu.Unlock()
-		// Succeed on the 7th attempt
 		if callCount >= 7 {
 			return nil
 		}
@@ -330,7 +309,7 @@ func TestReconnector_backoffDelaysAreCorrect(t *testing.T) {
 		t.Fatal("timed out")
 	}
 
-	delays := dr.getDelays()
+	sleeps := clk.Sleeps()
 	expected := []time.Duration{
 		1 * time.Second,
 		2 * time.Second,
@@ -339,12 +318,12 @@ func TestReconnector_backoffDelaysAreCorrect(t *testing.T) {
 		16 * time.Second,
 		30 * time.Second,
 	}
-	if len(delays) != len(expected) {
-		t.Fatalf("got %d delays, want %d: %v", len(delays), len(expected), delays)
+	if len(sleeps) != len(expected) {
+		t.Fatalf("got %d sleeps, want %d: %v", len(sleeps), len(expected), sleeps)
 	}
 	for i, want := range expected {
-		if delays[i] != want {
-			t.Errorf("delay[%d] = %v, want %v", i, delays[i], want)
+		if sleeps[i] != want {
+			t.Errorf("sleep[%d] = %v, want %v", i, sleeps[i], want)
 		}
 	}
 }
@@ -410,25 +389,31 @@ func TestKeepalive_detectsThreeConsecutiveFailures(t *testing.T) {
 	fp := &fakePinger{err: fmt.Errorf("ping failed")}
 	triggered := make(chan struct{}, 1)
 
+	clk := clock.NewFake(t0)
 	ka := NewKeepalive(fp.ping, func() {
 		select {
 		case triggered <- struct{}{}:
 		default:
 		}
 	})
-	// Use fast interval for testing
-	ka.interval = 10 * time.Millisecond
+	ka.clock = clk
+	ka.interval = 10 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go ka.Run(ctx)
+	time.Sleep(time.Millisecond) // let goroutine register ticker
+
+	for i := 0; i < KeepaliveFailureThreshold; i++ {
+		clk.Advance(10 * time.Second)
+		time.Sleep(time.Millisecond) // let goroutine process tick
+	}
 
 	select {
 	case <-triggered:
-		// good, reconnect was triggered
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out; expected reconnect trigger after 3 keepalive failures")
+	default:
+		t.Fatal("expected reconnect trigger after 3 keepalive failures")
 	}
 
 	if fp.getCalls() < 3 {
@@ -437,8 +422,6 @@ func TestKeepalive_detectsThreeConsecutiveFailures(t *testing.T) {
 }
 
 func TestKeepalive_resetsCounterOnSuccess(t *testing.T) {
-	// Pinger that fails twice, succeeds once, then fails twice again.
-	// Should never reach 3 consecutive failures.
 	callNum := 0
 	var mu sync.Mutex
 
@@ -448,8 +431,6 @@ func TestKeepalive_resetsCounterOnSuccess(t *testing.T) {
 		n := callNum
 		mu.Unlock()
 
-		// Pattern: fail, fail, success, fail, fail, success, ...
-		// (every 3rd call succeeds)
 		if n%3 == 0 {
 			return nil
 		}
@@ -457,34 +438,39 @@ func TestKeepalive_resetsCounterOnSuccess(t *testing.T) {
 	}
 
 	triggered := make(chan struct{}, 10)
+	clk := clock.NewFake(t0)
 	ka := NewKeepalive(ping, func() {
 		triggered <- struct{}{}
 	})
-	ka.interval = 10 * time.Millisecond
+	ka.clock = clk
+	ka.interval = 10 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go ka.Run(ctx)
+	time.Sleep(time.Millisecond)
 
-	// Let it run for enough calls (at least 9 = 3 full cycles of fail-fail-success)
-	time.Sleep(120 * time.Millisecond)
+	for i := 0; i < 9; i++ {
+		clk.Advance(10 * time.Second)
+		time.Sleep(time.Millisecond)
+	}
 	cancel()
 
-	// Should never have triggered because consecutive failures never reached 3
 	select {
 	case <-triggered:
 		t.Error("should not have triggered reconnect; success should reset failure counter")
 	default:
-		// good
 	}
 }
 
 func TestKeepalive_contextCancellationStops(t *testing.T) {
 	fp := &fakePinger{}
 
+	clk := clock.NewFake(t0)
 	ka := NewKeepalive(fp.ping, func() {})
-	ka.interval = 10 * time.Millisecond
+	ka.clock = clk
+	ka.interval = 10 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -494,12 +480,12 @@ func TestKeepalive_contextCancellationStops(t *testing.T) {
 		close(done)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Let the goroutine start and block on ticker
+	time.Sleep(time.Millisecond)
 	cancel()
 
 	select {
 	case <-done:
-		// good
 	case <-time.After(2 * time.Second):
 		t.Fatal("keepalive Run did not return after context cancellation")
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"belochka/internal/clock"
 	"belochka/internal/model"
 )
 
@@ -603,6 +604,95 @@ func TestParseCombinedOutput_wrongSectionCount(t *testing.T) {
 	_, err := ParseCombinedOutput(output)
 	if err == nil {
 		t.Error("expected error for wrong section count")
+	}
+}
+
+// --- FakeClock-based tests ---
+
+func TestCollector_fakeClock_deterministicDelta(t *testing.T) {
+	exec := &fakeExecutor{output: validCombinedOutput()}
+	clk := clock.NewFake(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	c := NewCollector("srv-1", exec, CollectorOptions{
+		Interval: 2 * time.Second,
+		Timeout:  5 * time.Second,
+	})
+	c.clock = clk
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go c.Run(ctx)
+	time.Sleep(time.Millisecond) // let goroutine start and run first collect
+
+	snap := c.Latest()
+	if snap == nil {
+		t.Fatal("expected partial snapshot after first collect")
+	}
+	if !snap.Partial {
+		t.Error("first cycle should be partial")
+	}
+
+	// Advance clock to trigger second collection
+	clk.Advance(2 * time.Second)
+	time.Sleep(time.Millisecond)
+
+	snap = c.Latest()
+	if snap == nil {
+		t.Fatal("expected snapshot after second collect")
+	}
+	if snap.Partial {
+		t.Error("second cycle should not be partial")
+	}
+	if len(snap.CPU) == 0 {
+		t.Error("expected CPU usage entries")
+	}
+	// With identical consecutive readings, all CPU deltas are zero
+	if snap.CPU[0].UsedPct != 0 {
+		t.Errorf("CPU used = %.2f, want 0 (identical readings)", snap.CPU[0].UsedPct)
+	}
+	// Network rates should be zero with identical readings and 2s interval
+	for _, r := range snap.Network {
+		if r.RxBytesPS != 0 || r.TxBytesPS != 0 {
+			t.Errorf("network %s rate should be 0 with identical readings, got rx=%.0f tx=%.0f",
+				r.Name, r.RxBytesPS, r.TxBytesPS)
+		}
+	}
+}
+
+func TestCollector_fakeClock_failureThreshold(t *testing.T) {
+	exec := &fakeExecutor{err: fmt.Errorf("ssh fail")}
+	clk := clock.NewFake(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	triggered := make(chan int, 10)
+	c := NewCollector("srv-1", exec, CollectorOptions{
+		Interval: 2 * time.Second,
+		Timeout:  5 * time.Second,
+	})
+	c.clock = clk
+	c.OnFailureThreshold = func(failures int) {
+		triggered <- failures
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go c.Run(ctx)
+	time.Sleep(time.Millisecond) // first collect (failure 1)
+
+	// Advance to trigger 2 more collections (failure 2 and 3)
+	clk.Advance(2 * time.Second)
+	time.Sleep(time.Millisecond)
+	clk.Advance(2 * time.Second)
+	time.Sleep(time.Millisecond)
+
+	select {
+	case count := <-triggered:
+		if count < 3 {
+			t.Errorf("expected failure count >= 3, got %d", count)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("OnFailureThreshold was not called")
 	}
 }
 

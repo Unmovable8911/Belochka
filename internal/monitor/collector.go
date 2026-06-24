@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"belochka/internal/clock"
 	"belochka/internal/model"
 )
 
@@ -37,6 +38,7 @@ type Collector struct {
 	serverID string
 	executor SSHExecutor
 	opts     CollectorOptions
+	clock    clock.Clock
 
 	// OnFailureThreshold is called when consecutive failures reach
 	// CollectionFailureThreshold (3). It fires once per threshold crossing.
@@ -57,22 +59,22 @@ func NewCollector(serverID string, executor SSHExecutor, opts CollectorOptions) 
 		serverID: serverID,
 		executor: executor,
 		opts:     opts.withDefaults(),
+		clock:    clock.Real{},
 	}
 }
 
 // Run starts the collection loop. It blocks until ctx is cancelled.
 func (c *Collector) Run(ctx context.Context) {
-	ticker := time.NewTicker(c.opts.Interval)
+	ticker := c.clock.NewTicker(c.opts.Interval)
 	defer ticker.Stop()
 
-	// Collect immediately on start
 	c.collect(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			c.collect(ctx)
 		}
 	}
@@ -120,7 +122,7 @@ func (c *Collector) collect(ctx context.Context) {
 		return
 	}
 
-	now := time.Now()
+	now := c.clock.Now()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

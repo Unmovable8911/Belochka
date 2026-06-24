@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"belochka/internal/clock"
 )
 
 const (
@@ -76,14 +78,12 @@ func backoffDelay(attempt int) time.Duration {
 // non-retryable error, or the context is cancelled.
 type Reconnector struct {
 	connect ConnectFunc
+	clock   clock.Clock
 
 	mu        sync.RWMutex
 	state     ConnState
 	attempts  int
 	lastError string
-
-	// sleepFn is used for backoff delays; overridable for testing.
-	sleepFn func(context.Context, time.Duration) error
 }
 
 // NewReconnector creates a new Reconnector with the given connect function.
@@ -91,19 +91,7 @@ func NewReconnector(connect ConnectFunc) *Reconnector {
 	return &Reconnector{
 		connect: connect,
 		state:   StateReconnecting,
-		sleepFn: contextSleep,
-	}
-}
-
-// contextSleep sleeps for the given duration or until ctx is cancelled.
-func contextSleep(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
+		clock:   clock.Real{},
 	}
 }
 
@@ -161,7 +149,7 @@ func (r *Reconnector) Run(ctx context.Context) {
 		)
 
 		delay := backoffDelay(currentAttempt - 1)
-		if err := r.sleepFn(ctx, delay); err != nil {
+		if err := r.clock.Sleep(ctx, delay); err != nil {
 			return // context cancelled
 		}
 	}
@@ -195,8 +183,9 @@ type PingFunc func(ctx context.Context) error
 // after KeepaliveFailureThreshold consecutive failures.
 type Keepalive struct {
 	ping        PingFunc
-	onReconnect func() // called when reconnection should be triggered
+	onReconnect func()
 	interval    time.Duration
+	clock       clock.Clock
 }
 
 // NewKeepalive creates a new Keepalive monitor.
@@ -205,6 +194,7 @@ func NewKeepalive(ping PingFunc, onReconnect func()) *Keepalive {
 		ping:        ping,
 		onReconnect: onReconnect,
 		interval:    KeepaliveInterval,
+		clock:       clock.Real{},
 	}
 }
 
@@ -212,7 +202,7 @@ func NewKeepalive(ping PingFunc, onReconnect func()) *Keepalive {
 // When KeepaliveFailureThreshold consecutive pings fail, it calls
 // onReconnect and resets the counter.
 func (k *Keepalive) Run(ctx context.Context) {
-	ticker := time.NewTicker(k.interval)
+	ticker := k.clock.NewTicker(k.interval)
 	defer ticker.Stop()
 
 	consecutiveFailures := 0
@@ -221,7 +211,7 @@ func (k *Keepalive) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			if err := k.ping(ctx); err != nil {
 				consecutiveFailures++
 				slog.Debug("keepalive ping failed",
