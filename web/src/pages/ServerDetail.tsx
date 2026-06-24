@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react"
-import { useParams, Link } from "react-router-dom"
-import { ArrowLeft, ArrowUp, ArrowDown } from "lucide-react"
+import { useParams, Link, useNavigate } from "react-router-dom"
+import { ArrowLeft, ArrowUp, ArrowDown, Trash2 } from "lucide-react"
 import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime, getUsageColor, type UsageColor } from "@/lib/format"
+import { Button } from "@/components/ui/button"
+import { DeleteServerDialog } from "@/components/DeleteServerDialog"
 import {
   Table,
   TableHeader,
@@ -31,10 +33,12 @@ const COLUMN_HEADERS: { key: SortColumn; label: string }[] = [
 
 export default function ServerDetail() {
   const { id } = useParams<{ id: string }>()
-  const { state } = useMonitorState()
+  const { state, dispatch } = useMonitorState()
+  const navigate = useNavigate()
 
   const [sortColumn, setSortColumn] = useState<SortColumn>("cpuPct")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const server = state.servers.find((s) => s.id === id)
   const metrics = id ? state.metrics[id] : undefined
@@ -78,7 +82,28 @@ export default function ServerDetail() {
         Back to Dashboard
       </Link>
 
-      <h1 className="text-2xl font-bold mb-6">{server.name}</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">{server.name}</h1>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="size-4 mr-1" />
+          Delete
+        </Button>
+      </div>
+
+      <DeleteServerDialog
+        server={server}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={(serverId) => {
+          dispatch({ type: "remove_server", data: { serverId } })
+          navigate("/")
+        }}
+      />
 
       {/* System Info Bar */}
       {system && (
