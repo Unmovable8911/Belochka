@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import * as api from "@/api/client"
+import { ApiError } from "@/api/client"
 
 export interface DeleteServerDialogProps {
   server: { id: string; name: string }
@@ -28,31 +30,20 @@ export function DeleteServerDialog({
   async function handleDelete() {
     setDeleting(true)
     try {
-      const res = await fetch(`/api/servers/${server.id}`, {
-        method: "DELETE",
-      })
-
-      if (res.status === 404) {
-        // Server already deleted — treat as success
-        toast.success(`Server "${server.name}" deleted`)
-        onDeleted(server.id)
-        onOpenChange(false)
+      await api.deleteServer(server.id)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "not_found") {
+        // Already deleted — treat as success
+      } else {
+        toast.error(err instanceof Error ? err.message : "Failed to delete server")
+        setDeleting(false)
         return
       }
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error?.message || "Failed to delete server")
-      }
-
-      toast.success(`Server "${server.name}" deleted`)
-      onDeleted(server.id)
-      onOpenChange(false)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete server")
-    } finally {
-      setDeleting(false)
     }
+    toast.success(`Server "${server.name}" deleted`)
+    onDeleted(server.id)
+    onOpenChange(false)
+    setDeleting(false)
   }
 
   return (

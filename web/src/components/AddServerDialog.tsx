@@ -19,35 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
-
-type AuthType = "password" | "key"
-
-interface ServerFormData {
-  name: string
-  host: string
-  port: number
-  username: string
-  authType: AuthType
-  password: string
-  keyPath: string
-}
-
-interface TestResult {
-  fingerprint: string
-}
-
-interface ServerResponse {
-  id: string
-  name: string
-  host: string
-  port: number
-  auth_type: AuthType
-  username: string
-  key_path?: string
-  host_key_fingerprint?: string
-  created_at: string
-  updated_at: string
-}
+import type { AuthType, Server, ServerFormData } from "@/types/server"
+import * as api from "@/api/client"
 
 const initialFormData: ServerFormData = {
   name: "",
@@ -60,7 +33,7 @@ const initialFormData: ServerFormData = {
 }
 
 export interface AddServerDialogProps {
-  onServerAdded?: (server: ServerResponse) => void
+  onServerAdded?: (server: Server) => void
   defaultOpen?: boolean
   defaultAuthType?: AuthType
   triggerLabel?: string
@@ -117,10 +90,9 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
     setFingerprintTrusted(false)
 
     try {
-      // First, create the server (or use existing if already created)
       let serverId = createdServerId
       if (!serverId) {
-        const createBody = {
+        const created = await api.createServer({
           name: form.name.trim(),
           host: form.host.trim(),
           port: form.port,
@@ -129,35 +101,12 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
           ...(form.authType === "password"
             ? { password: form.password }
             : { key_path: form.keyPath }),
-        }
-
-        const createRes = await fetch("/api/servers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(createBody),
         })
-
-        if (!createRes.ok) {
-          const err = await createRes.json()
-          throw new Error(err.error?.message || "Failed to create server")
-        }
-
-        const created: ServerResponse = await createRes.json()
         serverId = created.id
         setCreatedServerId(serverId)
       }
 
-      // Then test the connection
-      const testRes = await fetch(`/api/servers/${serverId}/test`, {
-        method: "POST",
-      })
-
-      if (!testRes.ok) {
-        const err = await testRes.json()
-        throw new Error(err.error?.message || "Connection test failed")
-      }
-
-      const result: TestResult = await testRes.json()
+      const result = await api.testConnection(serverId)
       setFingerprint(result.fingerprint)
     } catch (err) {
       setTestError(err instanceof Error ? err.message : "Connection test failed")
@@ -171,8 +120,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
 
     setSaving(true)
     try {
-      // Update the server with the confirmed fingerprint
-      const updateBody = {
+      const saved = await api.updateServer(createdServerId, {
         name: form.name.trim(),
         host: form.host.trim(),
         port: form.port,
@@ -182,20 +130,8 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
         ...(form.authType === "password"
           ? { password: form.password }
           : { key_path: form.keyPath }),
-      }
-
-      const res = await fetch(`/api/servers/${createdServerId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateBody),
       })
 
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error?.message || "Failed to save server")
-      }
-
-      const saved: ServerResponse = await res.json()
       toast.success(`Server "${saved.name}" added successfully`)
       onServerAdded?.(saved)
       setOpen(false)

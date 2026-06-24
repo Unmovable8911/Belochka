@@ -17,37 +17,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
-
-type AuthType = "password" | "key"
-
-export interface ServerData {
-  id: string
-  name: string
-  host: string
-  port: number
-  username: string
-  auth_type: AuthType
-  key_path?: string
-  host_key_fingerprint?: string
-  created_at: string
-  updated_at: string
-}
-
-interface ServerFormData {
-  name: string
-  host: string
-  port: number
-  username: string
-  authType: AuthType
-  password: string
-  keyPath: string
-}
+import type { AuthType, Server, ServerFormData } from "@/types/server"
+import * as api from "@/api/client"
 
 export interface EditServerDialogProps {
-  server: ServerData
+  server: Server
   open: boolean
   onOpenChange: (open: boolean) => void
-  onServerUpdated?: (server: ServerData) => void
+  onServerUpdated?: (server: Server) => void
 }
 
 /** Fields that require re-testing when changed */
@@ -60,7 +37,7 @@ const CONNECTION_FIELDS: (keyof ServerFormData)[] = [
   "keyPath",
 ]
 
-function serverToForm(server: ServerData): ServerFormData {
+function serverToForm(server: Server): ServerFormData {
   return {
     name: server.name,
     host: server.host,
@@ -165,14 +142,6 @@ export function EditServerDialog({
     return body
   }
 
-  async function putServer(body: Record<string, unknown>): Promise<Response> {
-    return fetch(`/api/servers/${server.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-  }
-
   async function handleTestConnection() {
     setTesting(true)
     setTestError(null)
@@ -180,23 +149,8 @@ export function EditServerDialog({
     setFingerprintTrusted(false)
 
     try {
-      const updateRes = await putServer(buildUpdateBody())
-
-      if (!updateRes.ok) {
-        const err = await updateRes.json()
-        throw new Error(err.error?.message || "Failed to update server")
-      }
-
-      const testRes = await fetch(`/api/servers/${server.id}/test`, {
-        method: "POST",
-      })
-
-      if (!testRes.ok) {
-        const err = await testRes.json()
-        throw new Error(err.error?.message || "Connection test failed")
-      }
-
-      const result = await testRes.json()
+      await api.updateServer(server.id, buildUpdateBody())
+      const result = await api.testConnection(server.id)
       setFingerprint(result.fingerprint)
     } catch (err) {
       setTestError(
@@ -217,14 +171,7 @@ export function EditServerDialog({
         extras.host_key_fingerprint = fingerprint
       }
 
-      const res = await putServer(buildUpdateBody(extras))
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error?.message || "Failed to save server")
-      }
-
-      const saved: ServerData = await res.json()
+      const saved = await api.updateServer(server.id, buildUpdateBody(extras))
       toast.success(`Server "${saved.name}" updated successfully`)
       onServerUpdated?.(saved)
       onOpenChange(false)
