@@ -1,64 +1,23 @@
-import { useState, useMemo } from "react"
+import { useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, ArrowUp, ArrowDown, Trash2 } from "lucide-react"
+import { ArrowLeft, Trash2 } from "lucide-react"
 import { useMonitorState } from "@/hooks/useMonitorState"
-import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime, getUsageColor, type UsageColor } from "@/lib/format"
+import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { DeleteServerDialog } from "@/components/DeleteServerDialog"
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from "@/components/ui/table"
-
-const COLOR_MAP: Record<UsageColor, string> = {
-  green: "#22c55e",
-  yellow: "#eab308",
-  red: "#ef4444",
-}
-
-type SortColumn = "pid" | "user" | "cpuPct" | "memPct" | "command"
-type SortDirection = "asc" | "desc"
-
-const COLUMN_HEADERS: { key: SortColumn; label: string }[] = [
-  { key: "pid", label: "PID" },
-  { key: "user", label: "User" },
-  { key: "cpuPct", label: "CPU%" },
-  { key: "memPct", label: "Memory%" },
-  { key: "command", label: "Command" },
-]
+import { RingGauge } from "@/components/RingGauge"
+import { UsageBar } from "@/components/UsageBar"
+import { ProcessTable } from "@/components/ProcessTable"
 
 export default function ServerDetail() {
   const { id } = useParams<{ id: string }>()
   const { state, dispatch } = useMonitorState()
   const navigate = useNavigate()
 
-  const [sortColumn, setSortColumn] = useState<SortColumn>("cpuPct")
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const server = state.servers.find((s) => s.id === id)
   const metrics = id ? state.metrics[id] : undefined
-
-  const sortedProcesses = useMemo(() => {
-    const procs = metrics?.process?.processes ?? []
-    const top20 = procs.slice(0, 20)
-    return [...top20].sort((a, b) => {
-      const aVal = a[sortColumn]
-      const bVal = b[sortColumn]
-      if (typeof aVal === "string" && typeof bVal === "string") {
-        return sortDirection === "asc"
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal)
-      }
-      const aNum = aVal as number
-      const bNum = bVal as number
-      return sortDirection === "asc" ? aNum - bNum : bNum - aNum
-    })
-  }, [metrics?.process?.processes, sortColumn, sortDirection])
 
   if (!server) {
     return (
@@ -138,58 +97,17 @@ export default function ServerDetail() {
           <div className="rounded-lg border bg-card p-4">
             <h2 className="text-lg font-semibold mb-4">CPU</h2>
             <div className="flex flex-col items-center gap-6 md:flex-row md:items-start">
-              {/* Ring Gauge */}
-              {(() => {
-                const pct = metrics.cpu.aggregate.usagePercent
-                const color = getUsageColor(pct)
-                const colorHex = COLOR_MAP[color]
-                return (
-                  <div
-                    data-testid="cpu-ring-gauge"
-                    data-color={color}
-                    className="relative flex items-center justify-center rounded-full size-32 shrink-0"
-                    style={{
-                      background: `conic-gradient(${colorHex} ${pct}%, #e5e7eb ${pct}%)`,
-                    }}
-                  >
-                    <div className="flex items-center justify-center rounded-full size-24 bg-background">
-                      <span className="text-lg font-bold">{formatPercent(pct)}</span>
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Per-core bars */}
+              <RingGauge value={metrics.cpu.aggregate.usagePercent} testId="cpu-ring-gauge" />
               <div className="flex-1 w-full space-y-2">
-                {metrics.cpu.cores.map((core, index) => {
-                  const coreColor = getUsageColor(core.usagePercent)
-                  const coreColorHex = COLOR_MAP[coreColor]
-                  return (
-                    <div key={core.name ?? index}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>Core {index}</span>
-                        <span>{formatPercent(core.usagePercent)}</span>
-                      </div>
-                      <div
-                        className="h-2 w-full rounded-full bg-muted overflow-hidden"
-                        role="progressbar"
-                        aria-label={`Core ${index} usage`}
-                        aria-valuenow={Math.round(core.usagePercent)}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        data-color={coreColor}
-                      >
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${core.usagePercent}%`,
-                            backgroundColor: coreColorHex,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
+                {metrics.cpu.cores.map((core, index) => (
+                  <UsageBar
+                    key={core.name ?? index}
+                    label={`Core ${index}`}
+                    value={core.usagePercent}
+                    rightText={formatPercent(core.usagePercent)}
+                    ariaLabel={`Core ${index} usage`}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -200,36 +118,18 @@ export default function ServerDetail() {
           <div className="rounded-lg border bg-card p-4">
             <h2 className="text-lg font-semibold mb-4">Memory</h2>
             <div className="flex flex-col items-center gap-4">
-              {(() => {
-                const mem = metrics.memory
-                const pct = mem.total > 0 ? (mem.used / mem.total) * 100 : 0
-                const color = getUsageColor(pct)
-                const colorHex = COLOR_MAP[color]
-                return (
-                  <>
-                    <div
-                      data-testid="memory-ring-gauge"
-                      data-color={color}
-                      className="relative flex items-center justify-center rounded-full size-32 shrink-0"
-                      style={{
-                        background: `conic-gradient(${colorHex} ${pct.toFixed(1)}%, #e5e7eb ${pct.toFixed(1)}%)`,
-                      }}
-                    >
-                      <div className="flex items-center justify-center rounded-full size-24 bg-background">
-                        <span className="text-lg font-bold">{formatPercent(pct)}</span>
-                      </div>
-                    </div>
-                    <div className="text-sm text-center">
-                      <span>{formatBytes(mem.used)} / {formatBytes(mem.total)}</span>
-                    </div>
-                    {mem.swapTotal > 0 && (
-                      <div className="text-sm text-muted-foreground text-center" data-testid="swap-info">
-                        Swap: {formatBytes(mem.swapUsed)} / {formatBytes(mem.swapTotal)}
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
+              <RingGauge
+                value={metrics.memory.total > 0 ? (metrics.memory.used / metrics.memory.total) * 100 : 0}
+                testId="memory-ring-gauge"
+              />
+              <div className="text-sm text-center">
+                <span>{formatBytes(metrics.memory.used)} / {formatBytes(metrics.memory.total)}</span>
+              </div>
+              {metrics.memory.swapTotal > 0 && (
+                <div className="text-sm text-muted-foreground text-center" data-testid="swap-info">
+                  Swap: {formatBytes(metrics.memory.swapUsed)} / {formatBytes(metrics.memory.swapTotal)}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -241,32 +141,14 @@ export default function ServerDetail() {
             <div className="space-y-3">
               {metrics.disk.partitions.map((partition) => {
                 const pct = partition.total > 0 ? (partition.used / partition.total) * 100 : 0
-                const color = getUsageColor(pct)
-                const colorHex = COLOR_MAP[color]
                 return (
-                  <div key={partition.mountPoint}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>{partition.mountPoint}</span>
-                      <span>{formatBytes(partition.used)} / {formatBytes(partition.total)}</span>
-                    </div>
-                    <div
-                      className="h-2 w-full rounded-full bg-muted overflow-hidden"
-                      role="progressbar"
-                      aria-label={`${partition.mountPoint} usage`}
-                      aria-valuenow={Math.round(pct)}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      data-color={color}
-                    >
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${pct}%`,
-                          backgroundColor: colorHex,
-                        }}
-                      />
-                    </div>
-                  </div>
+                  <UsageBar
+                    key={partition.mountPoint}
+                    label={partition.mountPoint}
+                    value={pct}
+                    rightText={`${formatBytes(partition.used)} / ${formatBytes(partition.total)}`}
+                    ariaLabel={`${partition.mountPoint} usage`}
+                  />
                 )
               })}
             </div>
@@ -296,50 +178,7 @@ export default function ServerDetail() {
       {metrics?.process && (
         <div className="mt-6" data-testid="process-section">
           <h2 className="text-lg font-semibold mb-4">Processes</h2>
-          {sortedProcesses.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No process data available.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {COLUMN_HEADERS.map(({ key, label }) => (
-                    <TableHead
-                      key={key}
-                      className="cursor-pointer select-none"
-                      onClick={() => {
-                        if (sortColumn === key) {
-                          setSortDirection((d) => (d === "asc" ? "desc" : "asc"))
-                        } else {
-                          setSortColumn(key)
-                          setSortDirection(key === "user" || key === "command" ? "asc" : "desc")
-                        }
-                      }}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {label}
-                        {sortColumn === key && (
-                          sortDirection === "asc"
-                            ? <ArrowUp className="size-3" />
-                            : <ArrowDown className="size-3" />
-                        )}
-                      </span>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedProcesses.map((proc) => (
-                  <TableRow key={proc.pid}>
-                    <TableCell>{proc.pid}</TableCell>
-                    <TableCell>{proc.user}</TableCell>
-                    <TableCell>{formatPercent(proc.cpuPct)}</TableCell>
-                    <TableCell>{formatPercent(proc.memPct)}</TableCell>
-                    <TableCell>{proc.command}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <ProcessTable processes={metrics.process.processes} />
         </div>
       )}
     </div>

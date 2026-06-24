@@ -54,3 +54,9 @@ export function getUsageColor(percent: number): UsageColor {
   if (percent < 80) return 'yellow'
   return 'red'
 }
+
+export const USAGE_COLOR_HEX: Record<UsageColor, string> = {
+  green: "#22c55e",
+  yellow: "#eab308",
+  red: "#ef4444",
+}

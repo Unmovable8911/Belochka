@@ -1,1 +1,0 @@
-/home/kilian/.claude/skills/dispatch-issues/scripts/outline.py

@@ -6,11 +6,6 @@ Belochka (белочка, "squirrel") — a single-binary Go+React web app for m
 
 - **Location**: `/home/kilian/code/belochka`
 - **Branch**: `main`
-- **Code**: Greenfield — no application code yet. Only docs and config files exist.
-
-## What's Next
-
-Implementation. All 23 issues are status `pending` in the outline. The next session should start executing them wave by wave.
 
 ## Constraints
 
@@ -18,5 +13,13 @@ Implementation. All 23 issues are status `pending` in the outline. The next sess
 - Write or modify files only in English.
 - When commit, do not mention *Co-Authored-By: Claude* in the commit message
 
-## Requirements
+## Future Consideration
 
+- Web terminal / SSH console
+- Cron job management
+- Public internet deployment
+- SSH key passphrase support
+- User-configurable card ordering (drag and drop)
+- Light theme or theme switching
+- Docker-native deployment (Dockerfile)
+- Multiple language support (Chinese, French, Russian)

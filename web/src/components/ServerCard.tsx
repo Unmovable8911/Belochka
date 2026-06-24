@@ -3,8 +3,8 @@ import { Link } from "react-router-dom"
 import { WifiOff, Loader2, ShieldAlert, KeyRound } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { formatPercent, formatNetworkSpeed, getUsageColor } from "@/lib/format"
+import { UsageBar } from "@/components/UsageBar"
+import { formatPercent, formatNetworkSpeed } from "@/lib/format"
 import type { ServerInfo, ServerMetrics, NetworkInterface, DiskPartition } from "@/hooks/useMonitorState"
 
 interface ServerCardProps {
@@ -43,23 +43,6 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
     default:
       return "secondary"
   }
-}
-
-function ColoredProgress({
-  value,
-  label,
-}: {
-  value: number
-  label: string
-}) {
-  const color = getUsageColor(value)
-  return (
-    <Progress
-      value={value}
-      aria-label={label}
-      data-color={color}
-    />
-  )
 }
 
 function getDisconnectedDisplay(server: ServerInfo): {
@@ -139,40 +122,23 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
           </CardContent>
         ) : metrics ? (
           <CardContent className="space-y-3">
-            {/* CPU */}
             {cpuPercent !== undefined && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span>CPU</span>
-                  <span>{formatPercent(cpuPercent)}</span>
-                </div>
-                <ColoredProgress value={cpuPercent} label="CPU usage" />
-              </div>
+              <UsageBar label="CPU" value={cpuPercent} rightText={formatPercent(cpuPercent)} ariaLabel="CPU usage" />
             )}
 
-            {/* Memory */}
             {memPercent !== undefined && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span>Memory</span>
-                  <span>{formatPercent(memPercent)}</span>
-                </div>
-                <ColoredProgress value={Math.round(memPercent)} label="Memory usage" />
-              </div>
+              <UsageBar label="Memory" value={memPercent} rightText={formatPercent(memPercent)} ariaLabel="Memory usage" />
             )}
 
-            {/* Disk */}
             {highestDisk && diskPercent !== undefined && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span>Disk <span className="text-muted-foreground">({highestDisk.mountPoint})</span></span>
-                  <span>{formatPercent(diskPercent)}</span>
-                </div>
-                <ColoredProgress value={Math.round(diskPercent)} label="Disk usage" />
-              </div>
+              <UsageBar
+                label={<>Disk <span className="text-muted-foreground">({highestDisk.mountPoint})</span></>}
+                value={diskPercent}
+                rightText={formatPercent(diskPercent)}
+                ariaLabel="Disk usage"
+              />
             )}
 
-            {/* Network */}
             {hasNetwork && (
               <div className="space-y-1">
                 <div className="flex justify-between text-sm">
