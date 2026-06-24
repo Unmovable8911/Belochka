@@ -77,8 +77,6 @@ func (a *Application) Start(ctx context.Context) error {
 	a.syncServers(ctx)
 	a.broadcastAll(ctx)
 
-	go a.runBroadcastLoop(ctx)
-
 	onServerChange := func() {
 		a.syncServers(ctx)
 		a.broadcastAll(ctx)
@@ -90,9 +88,10 @@ func (a *Application) Start(ctx context.Context) error {
 	routerOpts = append(routerOpts, api.WithOnServerChange(onServerChange))
 
 	distFS, err := web.DistFS()
-	if err == nil {
-		routerOpts = append(routerOpts, api.WithStaticFS(distFS))
+	if err != nil {
+		return fmt.Errorf("load frontend assets: %w", err)
 	}
+	routerOpts = append(routerOpts, api.WithStaticFS(distFS))
 
 	router := api.NewRouter(a.hub, routerOpts...)
 
@@ -107,6 +106,8 @@ func (a *Application) Start(ctx context.Context) error {
 	hubCtx, hubCancel := context.WithCancel(ctx)
 	a.hubCancel = hubCancel
 	go a.hub.Run(hubCtx)
+
+	go a.runBroadcastLoop(ctx)
 
 	go func() {
 		slog.Info("starting server", "addr", a.addr, "data_dir", a.cfg.DataDir)
