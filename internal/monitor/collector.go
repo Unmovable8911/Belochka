@@ -197,8 +197,9 @@ type Manager struct {
 	executor SSHExecutor
 	opts     CollectorOptions
 
-	mu         sync.RWMutex
-	collectors map[string]*managedCollector
+	mu                 sync.RWMutex
+	collectors         map[string]*managedCollector
+	onFailureThreshold func(serverID string, failures int)
 }
 
 // NewManager creates a new Manager.
@@ -208,6 +209,14 @@ func NewManager(executor SSHExecutor, opts CollectorOptions) *Manager {
 		opts:       opts,
 		collectors: make(map[string]*managedCollector),
 	}
+}
+
+// SetOnFailureThreshold sets a callback invoked when any collector
+// reaches CollectionFailureThreshold consecutive failures.
+func (m *Manager) SetOnFailureThreshold(fn func(serverID string, failures int)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onFailureThreshold = fn
 }
 
 // Add starts a collector for the given server. If a collector already exists
@@ -222,6 +231,13 @@ func (m *Manager) Add(ctx context.Context, serverID string) {
 
 	collCtx, cancel := context.WithCancel(ctx)
 	c := NewCollector(serverID, m.executor, m.opts)
+	if m.onFailureThreshold != nil {
+		fn := m.onFailureThreshold
+		sid := serverID
+		c.OnFailureThreshold = func(failures int) {
+			fn(sid, failures)
+		}
+	}
 	mc := &managedCollector{collector: c, cancel: cancel}
 	m.collectors[serverID] = mc
 

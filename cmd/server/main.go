@@ -16,6 +16,7 @@ import (
 	"belochka/internal/config"
 	"belochka/internal/hub"
 	"belochka/internal/model"
+	"belochka/internal/monitor"
 	"belochka/internal/shutdown"
 	"belochka/internal/ssh"
 	"belochka/internal/store"
@@ -51,42 +52,111 @@ func main() {
 		os.Exit(1)
 	}
 
-	broadcastServers := func() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	// SSH connection pool
+	pool := ssh.NewPool(db)
+
+	// Metrics collector manager
+	collectorMgr := monitor.NewManager(pool, monitor.CollectorOptions{})
+	collectorMgr.SetOnFailureThreshold(func(serverID string, failures int) {
+		pool.TriggerReconnect(serverID)
+	})
+
+	// syncServers ensures the pool and collector manager match the database.
+	syncServers := func() {
+		servers, err := db.List(context.Background())
+		if err != nil {
+			slog.Error("failed to list servers for sync", "error", err)
+			return
+		}
+
+		currentIDs := make(map[string]bool, len(servers))
+		for _, s := range servers {
+			currentIDs[s.ID] = true
+			pool.Add(ctx, s.ID)
+			collectorMgr.Add(ctx, s.ID)
+		}
+
+		for _, id := range collectorMgr.ServerIDs() {
+			if !currentIDs[id] {
+				collectorMgr.Remove(id)
+				pool.Remove(id)
+			}
+		}
+	}
+
+	// broadcastAll builds and sends a full snapshot to all WebSocket clients.
+	broadcastAll := func() {
 		servers, err := db.List(context.Background())
 		if err != nil {
 			slog.Error("failed to list servers for broadcast", "error", err)
 			return
 		}
-		type serverInfo struct {
-			ID     string `json:"id"`
-			Name   string `json:"name"`
-			Host   string `json:"host"`
-			Status string `json:"status"`
-		}
-		infos := make([]serverInfo, len(servers))
+
+		infos := make([]wireServerInfo, len(servers))
+		metrics := make(map[string]wireMetrics)
+
 		for i, s := range servers {
-			infos[i] = serverInfo{ID: s.ID, Name: s.Name, Host: s.Host, Status: "disconnected"}
+			status := pool.Status(s.ID)
+			infos[i] = wireServerInfo{
+				ID:        s.ID,
+				Name:      s.Name,
+				Host:      s.Host,
+				Status:    string(status.State),
+				Attempts:  status.Attempts,
+				LastError: status.LastError,
+			}
+
+			snap := collectorMgr.Latest(s.ID)
+			if snap != nil {
+				metrics[s.ID] = snapshotToWire(*snap)
+			}
 		}
-		snapData, err := json.Marshal(map[string]interface{}{
-			"servers": infos,
-			"metrics": map[string]interface{}{},
-		})
+
+		payload := wireSnapshot{
+			Servers: infos,
+			Metrics: metrics,
+		}
+
+		data, err := json.Marshal(payload)
 		if err != nil {
 			slog.Error("failed to marshal snapshot", "error", err)
 			return
 		}
-		h.SetSnapshot(snapData)
-		h.BroadcastMsg("snapshot", snapData)
+		h.SetSnapshot(data)
+		h.BroadcastMsg("snapshot", data)
 	}
 
-	broadcastServers()
+	// Start SSH connections and collectors for existing servers.
+	syncServers()
+	broadcastAll()
+
+	// Periodic broadcast loop — pushes metrics to all WebSocket clients.
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				broadcastAll()
+			}
+		}
+	}()
+
+	onServerChange := func() {
+		syncServers()
+		broadcastAll()
+	}
 
 	var routerOpts []api.RouterOption
 	routerOpts = append(routerOpts, api.WithServerStore(db))
 	routerOpts = append(routerOpts, api.WithSSHTester(sshTester{}))
-	routerOpts = append(routerOpts, api.WithOnServerChange(broadcastServers))
+	routerOpts = append(routerOpts, api.WithOnServerChange(onServerChange))
 
-	// Embed production frontend assets.
 	distFS, err := web.DistFS()
 	if err != nil {
 		slog.Error("failed to load embedded frontend assets", "error", err)
@@ -101,9 +171,6 @@ func main() {
 		Addr:    addr,
 		Handler: router,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
 
 	hubCtx, hubCancel := context.WithCancel(ctx)
 
@@ -122,24 +189,25 @@ func main() {
 
 	seq := shutdown.NewSequence(shutdownTimeout)
 
-	// Step 1: Stop accepting new HTTP connections.
 	seq.Add("http", func(ctx context.Context) error {
 		return srv.Shutdown(ctx)
 	})
 
-	// Step 2: Close WebSocket connections (sends close frames).
 	seq.Add("websocket", func(ctx context.Context) error {
 		hubCancel()
 		return nil
 	})
 
-	// Step 3: Stop all collector goroutines.
-	// (monitor.Manager is wired here when available)
+	seq.Add("collectors", func(ctx context.Context) error {
+		collectorMgr.StopAll()
+		return nil
+	})
 
-	// Step 4: Close all SSH connections.
-	// (SSH pool is closed here when available)
+	seq.Add("ssh", func(ctx context.Context) error {
+		pool.CloseAll()
+		return nil
+	})
 
-	// Step 5: Close SQLite database (WAL checkpoint).
 	seq.Add("database", func(ctx context.Context) error {
 		return db.Close()
 	})
