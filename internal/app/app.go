@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"belochka/internal/api"
+	"belochka/internal/broadcast"
 	"belochka/internal/config"
 	"belochka/internal/hub"
 	"belochka/internal/model"
@@ -180,8 +180,6 @@ func (a *Application) syncServers(ctx context.Context) {
 	}
 }
 
-// broadcastAll builds a full snapshot from the current server list
-// and broadcasts it to all WebSocket clients.
 func (a *Application) broadcastAll(ctx context.Context) {
 	servers, err := a.store.List(ctx)
 	if err != nil {
@@ -189,34 +187,28 @@ func (a *Application) broadcastAll(ctx context.Context) {
 		return
 	}
 
-	infos := make([]wireServerInfo, len(servers))
-	metrics := make(map[string]wireMetrics)
+	infos := make([]broadcast.ServerInfo, len(servers))
+	snapshots := make(map[string]*model.Snapshot)
 
 	for i, s := range servers {
 		status := a.pool.Status(s.ID)
-		infos[i] = wireServerInfo{
+		infos[i] = broadcast.ServerInfo{
 			ID:        s.ID,
 			Name:      s.Name,
 			Host:      s.Host,
-			Status:    string(status.State),
+			State:     string(status.State),
 			Attempts:  status.Attempts,
 			LastError: status.LastError,
 		}
 
-		snap := a.collectorMgr.Latest(s.ID)
-		if snap != nil {
-			metrics[s.ID] = snapshotToWire(*snap)
+		if snap := a.collectorMgr.Latest(s.ID); snap != nil {
+			snapshots[s.ID] = snap
 		}
 	}
 
-	payload := wireSnapshot{
-		Servers: infos,
-		Metrics: metrics,
-	}
-
-	data, err := json.Marshal(payload)
+	data, err := broadcast.Assemble(infos, snapshots)
 	if err != nil {
-		slog.Error("failed to marshal snapshot", "error", err)
+		slog.Error("failed to assemble broadcast", "error", err)
 		return
 	}
 	a.hub.SetSnapshot(data)

@@ -1,9 +1,6 @@
-package app
+package broadcast
 
 import "belochka/internal/model"
-
-// Wire format types matching the frontend's expected JSON schema.
-// All field names use camelCase to match TypeScript interfaces.
 
 type wireServerInfo struct {
 	ID        string `json:"id"`
@@ -15,8 +12,8 @@ type wireServerInfo struct {
 }
 
 type wireSnapshot struct {
-	Servers []wireServerInfo          `json:"servers"`
-	Metrics map[string]wireMetrics    `json:"metrics"`
+	Servers []wireServerInfo       `json:"servers"`
+	Metrics map[string]wireMetrics `json:"metrics"`
 }
 
 type wireMetrics struct {
