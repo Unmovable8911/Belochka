@@ -15,9 +15,10 @@ import (
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
-	staticFS    fs.FS
-	serverStore ServerStore
-	sshTester   SSHTester
+	staticFS       fs.FS
+	serverStore    ServerStore
+	sshTester      SSHTester
+	onServerChange func()
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -42,6 +43,13 @@ func WithSSHTester(tester SSHTester) RouterOption {
 	}
 }
 
+// WithOnServerChange sets a callback invoked after server create/update/delete.
+func WithOnServerChange(fn func()) RouterOption {
+	return func(c *routerConfig) {
+		c.onServerChange = fn
+	}
+}
+
 // NewRouter creates and returns the application HTTP router with all routes mounted.
 func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	var cfg routerConfig
@@ -56,7 +64,7 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 
 	// Server CRUD and test endpoints
 	if cfg.serverStore != nil {
-		sh := &serverHandler{store: cfg.serverStore, tester: cfg.sshTester}
+		sh := &serverHandler{store: cfg.serverStore, tester: cfg.sshTester, onChange: cfg.onServerChange}
 		r.Post("/api/servers", sh.create)
 		r.Get("/api/servers", sh.list)
 		r.Get("/api/servers/{id}", sh.getByID)

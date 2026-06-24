@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,9 +15,18 @@ import (
 	"belochka/internal/api"
 	"belochka/internal/config"
 	"belochka/internal/hub"
+	"belochka/internal/model"
 	"belochka/internal/shutdown"
+	"belochka/internal/ssh"
+	"belochka/internal/store"
 	"belochka/web"
 )
+
+type sshTester struct{}
+
+func (sshTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
+	return ssh.TestConnection(srv)
+}
 
 const shutdownTimeout = 10 * time.Second
 
@@ -35,7 +45,46 @@ func main() {
 
 	h := hub.New()
 
+	db, err := store.Open(cfg.DataDir, cfg.EncryptionKey)
+	if err != nil {
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
+	}
+
+	broadcastServers := func() {
+		servers, err := db.List(context.Background())
+		if err != nil {
+			slog.Error("failed to list servers for broadcast", "error", err)
+			return
+		}
+		type serverInfo struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Host   string `json:"host"`
+			Status string `json:"status"`
+		}
+		infos := make([]serverInfo, len(servers))
+		for i, s := range servers {
+			infos[i] = serverInfo{ID: s.ID, Name: s.Name, Host: s.Host, Status: "disconnected"}
+		}
+		snapData, err := json.Marshal(map[string]interface{}{
+			"servers": infos,
+			"metrics": map[string]interface{}{},
+		})
+		if err != nil {
+			slog.Error("failed to marshal snapshot", "error", err)
+			return
+		}
+		h.SetSnapshot(snapData)
+		h.BroadcastMsg("snapshot", snapData)
+	}
+
+	broadcastServers()
+
 	var routerOpts []api.RouterOption
+	routerOpts = append(routerOpts, api.WithServerStore(db))
+	routerOpts = append(routerOpts, api.WithSSHTester(sshTester{}))
+	routerOpts = append(routerOpts, api.WithOnServerChange(broadcastServers))
 
 	// Embed production frontend assets.
 	distFS, err := web.DistFS()
@@ -91,7 +140,9 @@ func main() {
 	// (SSH pool is closed here when available)
 
 	// Step 5: Close SQLite database (WAL checkpoint).
-	// (store.Close is called here when available)
+	seq.Add("database", func(ctx context.Context) error {
+		return db.Close()
+	})
 
 	if err := seq.Run(context.Background()); err != nil {
 		slog.Error("graceful shutdown completed with errors", "error", err)

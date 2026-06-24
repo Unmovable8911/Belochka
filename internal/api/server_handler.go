@@ -29,8 +29,15 @@ type SSHTester interface {
 
 // serverHandler handles server CRUD and test endpoints.
 type serverHandler struct {
-	store  ServerStore
-	tester SSHTester
+	store    ServerStore
+	tester   SSHTester
+	onChange func()
+}
+
+func (h *serverHandler) notifyChange() {
+	if h.onChange != nil {
+		h.onChange()
+	}
 }
 
 // errorBody is the unified error response format.
@@ -103,6 +110,7 @@ func (h *serverHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, toServerResponse(created))
+	h.notifyChange()
 }
 
 func (h *serverHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +171,7 @@ func (h *serverHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, toServerResponse(updated))
+	h.notifyChange()
 }
 
 func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +187,7 @@ func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	h.notifyChange()
 }
 
 func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
