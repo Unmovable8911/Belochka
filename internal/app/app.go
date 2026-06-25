@@ -17,6 +17,7 @@ import (
 	"belochka/internal/shutdown"
 	"belochka/internal/ssh"
 	"belochka/internal/store"
+	"belochka/internal/terminal"
 	"belochka/web"
 )
 
@@ -32,14 +33,15 @@ func (sshTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
 // It wires together the hub, store, SSH pool, collector manager,
 // and HTTP server, providing Start/Shutdown lifecycle management.
 type Application struct {
-	cfg          config.Config
-	hub          *hub.Hub
-	store        *store.SQLiteStore
-	pool         *ssh.Pool
-	collectorMgr *monitor.Manager
-	httpServer   *http.Server
-	hubCancel    context.CancelFunc
-	addr         string
+	cfg             config.Config
+	hub             *hub.Hub
+	store           *store.SQLiteStore
+	pool            *ssh.Pool
+	collectorMgr    *monitor.Manager
+	terminalHandler *terminal.Handler
+	httpServer      *http.Server
+	hubCancel       context.CancelFunc
+	addr            string
 }
 
 // New creates a new Application from the given configuration.
@@ -60,12 +62,17 @@ func New(cfg config.Config) (*Application, error) {
 		pool.TriggerReconnect(serverID)
 	})
 
+	termHandler := terminal.NewHandler(&terminal.SSHSessionOpener{
+		OpenFn: pool.OpenSession,
+	})
+
 	return &Application{
-		cfg:          cfg,
-		hub:          h,
-		store:        db,
-		pool:         pool,
-		collectorMgr: collectorMgr,
+		cfg:             cfg,
+		hub:             h,
+		store:           db,
+		pool:            pool,
+		collectorMgr:    collectorMgr,
+		terminalHandler: termHandler,
 	}, nil
 }
 
@@ -86,6 +93,9 @@ func (a *Application) Start(ctx context.Context) error {
 	routerOpts = append(routerOpts, api.WithServerStore(a.store))
 	routerOpts = append(routerOpts, api.WithSSHTester(sshTester{}))
 	routerOpts = append(routerOpts, api.WithOnServerChange(onServerChange))
+	routerOpts = append(routerOpts, api.WithTerminalSessionOpener(&terminal.SSHSessionOpener{
+		OpenFn: a.pool.OpenSession,
+	}))
 
 	distFS, err := web.DistFS()
 	if err != nil {
@@ -130,6 +140,11 @@ func (a *Application) Shutdown() error {
 
 	seq.Add("websocket", func(ctx context.Context) error {
 		a.hubCancel()
+		return nil
+	})
+
+	seq.Add("terminal", func(ctx context.Context) error {
+		a.terminalHandler.CloseAll()
 		return nil
 	})
 

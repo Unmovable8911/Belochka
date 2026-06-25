@@ -5,21 +5,27 @@ import { StaleDataOverlay } from "./components/StaleDataOverlay"
 import { Layout } from "./components/Layout"
 import Dashboard from "./pages/Dashboard"
 import ServerDetail from "./pages/ServerDetail"
+import Console from "./pages/Console"
 
 function App() {
   return (
     <BrowserRouter>
-      <WebSocketProvider>
-        <Layout>
-          <ConnectionBanner />
-          <StaleDataOverlay>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/server/:id" element={<ServerDetail />} />
-            </Routes>
-          </StaleDataOverlay>
-        </Layout>
-      </WebSocketProvider>
+      <Routes>
+        <Route path="/server/:id/console" element={<Console />} />
+        <Route path="*" element={
+          <WebSocketProvider>
+            <Layout>
+              <ConnectionBanner />
+              <StaleDataOverlay>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/server/:id" element={<ServerDetail />} />
+                </Routes>
+              </StaleDataOverlay>
+            </Layout>
+          </WebSocketProvider>
+        } />
+      </Routes>
     </BrowserRouter>
   )
 }

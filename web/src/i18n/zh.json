@@ -21,6 +21,7 @@
     "processes": "进程",
     "noProcessData": "暂无进程数据。",
     "delete": "删除",
+    "console": "控制台",
     "swap": "交换空间"
   },
   "serverCard": {
@@ -81,6 +82,15 @@
     "cpuPct": "CPU%",
     "memPct": "内存%",
     "command": "命令"
+  },
+  "console": {
+    "authPassword": "密码",
+    "authKey": "密钥",
+    "statusConnected": "已连接",
+    "statusConnecting": "连接中...",
+    "statusDisconnected": "已断开",
+    "disconnectedMessage": "会话已断开。",
+    "reconnect": "重新连接"
   },
   "language": {
     "label": "语言"

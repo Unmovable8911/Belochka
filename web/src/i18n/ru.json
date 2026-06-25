@@ -21,6 +21,7 @@
     "processes": "Процессы",
     "noProcessData": "Данные о процессах недоступны.",
     "delete": "Удалить",
+    "console": "Консоль",
     "swap": "Подкачка"
   },
   "serverCard": {
@@ -81,6 +82,15 @@
     "cpuPct": "CPU%",
     "memPct": "Память%",
     "command": "Команда"
+  },
+  "console": {
+    "authPassword": "Пароль",
+    "authKey": "Ключ",
+    "statusConnected": "Подключено",
+    "statusConnecting": "Подключение...",
+    "statusDisconnected": "Отключено",
+    "disconnectedMessage": "Сессия отключена.",
+    "reconnect": "Переподключить"
   },
   "language": {
     "label": "Язык"

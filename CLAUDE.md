@@ -1,6 +1,6 @@
 ## Project Info
 
-Belochka (белочка, "squirrel") — a single-binary Go+React web app for monitoring 5-20 remote Linux servers via persistent SSH connections. Streams CPU, memory, disk, network, and process metrics to a browser dashboard via WebSocket.
+Belochka (белочка, "squirrel") — a single-binary Go+React web app for managing 5-20 remote Linux servers via persistent SSH connections. Streams CPU, memory, disk, network, and process metrics to a browser dashboard via WebSocket, and provides a web-based interactive terminal (SSH console) for direct server access.
 
 ## Repo State
 
@@ -19,11 +19,9 @@ Belochka (белочка, "squirrel") — a single-binary Go+React web app for m
 
 ## Future Consideration
 
-- Web terminal / SSH console
 - Cron job management
 - Public internet deployment
 - SSH key passphrase support
 - User-configurable card ordering (drag and drop)
 - Light theme or theme switching
 - Docker-native deployment (Dockerfile)
-- Multiple language support (Chinese, French, Russian)

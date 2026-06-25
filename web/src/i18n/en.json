@@ -21,6 +21,7 @@
     "processes": "Processes",
     "noProcessData": "No process data available.",
     "delete": "Delete",
+    "console": "Console",
     "swap": "Swap"
   },
   "serverCard": {
@@ -81,6 +82,15 @@
     "cpuPct": "CPU%",
     "memPct": "Memory%",
     "command": "Command"
+  },
+  "console": {
+    "authPassword": "Password",
+    "authKey": "Key",
+    "statusConnected": "Connected",
+    "statusConnecting": "Connecting...",
+    "statusDisconnected": "Disconnected",
+    "disconnectedMessage": "Session disconnected.",
+    "reconnect": "Reconnect"
   },
   "language": {
     "label": "Language"

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Trash2 } from "lucide-react"
+import { ArrowLeft, Terminal, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
@@ -45,15 +45,26 @@ export default function ServerDetail() {
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">{server.name}</h1>
-        <Button
-          variant="destructive"
-          size="sm"
-          className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2 className="size-4 mr-1" />
-          {t("serverDetail.delete")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
+            onClick={() => window.open(`/server/${id}/console`, "_blank")}
+          >
+            <Terminal className="size-4 mr-1" />
+            {t("serverDetail.console")}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="size-4 mr-1" />
+            {t("serverDetail.delete")}
+          </Button>
+        </div>
       </div>
 
       <DeleteServerDialog

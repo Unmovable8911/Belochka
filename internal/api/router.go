@@ -7,6 +7,7 @@ import (
 
 	"belochka/internal/hub"
 	"belochka/internal/static"
+	"belochka/internal/terminal"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -15,10 +16,11 @@ import (
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
-	staticFS       fs.FS
-	serverStore    ServerStore
-	sshTester      SSHTester
-	onServerChange func()
+	staticFS              fs.FS
+	serverStore           ServerStore
+	sshTester             SSHTester
+	onServerChange        func()
+	terminalSessionOpener terminal.SessionOpener
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -50,6 +52,13 @@ func WithOnServerChange(fn func()) RouterOption {
 	}
 }
 
+// WithTerminalSessionOpener enables the terminal WebSocket endpoint.
+func WithTerminalSessionOpener(opener terminal.SessionOpener) RouterOption {
+	return func(c *routerConfig) {
+		c.terminalSessionOpener = opener
+	}
+}
+
 // NewRouter creates and returns the application HTTP router with all routes mounted.
 func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	var cfg routerConfig
@@ -73,6 +82,12 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 		if cfg.sshTester != nil {
 			r.Post("/api/servers/{id}/test", sh.testConnection)
 		}
+	}
+
+	// Terminal WebSocket endpoint
+	if cfg.terminalSessionOpener != nil {
+		th := terminal.NewHandler(cfg.terminalSessionOpener)
+		r.Get("/api/ws/terminal/{serverID}", th.ServeHTTP)
 	}
 
 	// Mount embedded static file serving if available (production mode).

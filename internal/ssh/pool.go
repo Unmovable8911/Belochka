@@ -206,6 +206,27 @@ func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error
 	return string(output), nil
 }
 
+// OpenSession creates a new SSH session on the existing connection for the given server.
+func (p *Pool) OpenSession(serverID string) (*gossh.Session, error) {
+	p.mu.RLock()
+	mc, ok := p.conns[serverID]
+	p.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("no connection for server %s", serverID)
+	}
+
+	mc.mu.RLock()
+	client := mc.client
+	mc.mu.RUnlock()
+
+	if client == nil {
+		return nil, fmt.Errorf("server %s not connected", serverID)
+	}
+
+	return client.NewSession()
+}
+
 // Status returns the connection status for a server.
 func (p *Pool) Status(serverID string) ConnStatus {
 	p.mu.RLock()
