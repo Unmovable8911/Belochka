@@ -1,19 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { render, screen, cleanup, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter } from "react-router-dom"
 import { I18nextProvider } from "react-i18next"
 import i18n from "../i18n"
-import { Layout } from "../components/Layout"
+import { LanguageSwitcher } from "../components/LanguageSwitcher"
 
-function renderLayout() {
+function renderSwitcher() {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <Layout>
-          <div>page content</div>
-        </Layout>
-      </MemoryRouter>
+      <LanguageSwitcher />
     </I18nextProvider>,
   )
 }
@@ -29,13 +24,13 @@ describe("Language Switcher", () => {
   })
 
   it("renders language switcher with globe icon", () => {
-    renderLayout()
+    renderSwitcher()
     expect(screen.getByTestId("language-switcher")).toBeInTheDocument()
   })
 
   it("shows four language options with native names", async () => {
     const user = userEvent.setup()
-    renderLayout()
+    renderSwitcher()
 
     const trigger = screen.getByTestId("language-switcher")
     await user.click(trigger)
@@ -53,7 +48,7 @@ describe("Language Switcher", () => {
 
   it("switching language changes UI text", async () => {
     const user = userEvent.setup()
-    renderLayout()
+    renderSwitcher()
 
     const trigger = screen.getByTestId("language-switcher")
     await user.click(trigger)
@@ -66,7 +61,7 @@ describe("Language Switcher", () => {
 
   it("persists language choice in localStorage", async () => {
     const user = userEvent.setup()
-    renderLayout()
+    renderSwitcher()
 
     const trigger = screen.getByTestId("language-switcher")
     await user.click(trigger)
@@ -77,8 +72,4 @@ describe("Language Switcher", () => {
     expect(localStorage.getItem("i18nextLng")).toBe("fr")
   })
 
-  it("renders children inside the layout", () => {
-    renderLayout()
-    expect(screen.getByText("page content")).toBeInTheDocument()
-  })
 })

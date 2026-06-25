@@ -1,6 +1,7 @@
 import { ServerIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { AddServerDialog } from "@/components/AddServerDialog"
+import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ServerCard } from "@/components/ServerCard"
 import { useMonitorState } from "@/hooks/useMonitorState"
 
@@ -13,7 +14,10 @@ export default function Dashboard() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">{t("dashboard.title")}</h1>
-        {hasServers && <AddServerDialog />}
+        <div className="flex items-center gap-2">
+          {hasServers && <AddServerDialog />}
+          <LanguageSwitcher />
+        </div>
       </div>
       {hasServers ? (
         <div

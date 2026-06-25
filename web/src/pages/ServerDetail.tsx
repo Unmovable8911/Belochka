@@ -6,6 +6,7 @@ import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { DeleteServerDialog } from "@/components/DeleteServerDialog"
+import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
 import { ProcessTable } from "@/components/ProcessTable"
@@ -64,6 +65,7 @@ export default function ServerDetail() {
             <Trash2 className="size-4 mr-1" />
             {t("serverDetail.delete")}
           </Button>
+          <LanguageSwitcher />
         </div>
       </div>
 

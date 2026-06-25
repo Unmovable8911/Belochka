@@ -23,7 +23,7 @@ internal/static/     — SPA file server with index.html fallback
 internal/terminal/   — Web terminal: WebSocket-SSH bridge with PTY, resize, session lifecycle
 web/                 — React frontend (Vite build), embedded into Go binary via embed.go
 web/src/pages/       — Dashboard, ServerDetail, and Console (web terminal) pages
-web/src/components/  — UI components: ServerCard, AddServerDialog, WebSocketProvider, Layout, RingGauge, etc.
+web/src/components/  — UI components: ServerCard, AddServerDialog, WebSocketProvider, Layout, LanguageSwitcher, RingGauge, etc.
 web/src/hooks/       — useMonitorState: WebSocket message state management
 web/src/api/         — REST API client (client.ts)
 web/src/types/       — TypeScript type definitions for server/metrics wire format
@@ -119,7 +119,7 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 
 ### web (frontend)
 - **Purpose**: React SPA dashboard. Three routes: `/` (Dashboard — server card grid with connection status and summary metrics), `/server/:id` (ServerDetail — detailed CPU, memory, disk, network, process views), and `/server/:id/console` (Console — full-page web terminal via xterm.js + WebSocket). Dashboard and detail routes use the shared Layout/WebSocketProvider; console route is standalone. Internationalized with react-i18next supporting English, Chinese (Simplified), French, and Russian.
-- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx`, `web/src/pages/Console.tsx` (web terminal page), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout with language switcher), `web/src/i18n/index.ts` (i18n config), `web/src/i18n/en.json` (English translations, reference for all languages), `web/src/hooks/useMonitorState.ts`, `web/src/api/client.ts`, `web/embed.go` (Go embed)
+- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx`, `web/src/pages/Console.tsx` (web terminal page), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/LanguageSwitcher.tsx` (language switcher used in Dashboard and ServerDetail), `web/src/i18n/index.ts` (i18n config), `web/src/i18n/en.json` (English translations, reference for all languages), `web/src/hooks/useMonitorState.ts`, `web/src/api/client.ts`, `web/embed.go` (Go embed)
 - **Dependencies**: React 19, react-router-dom, Radix UI, Tailwind CSS, Lucide icons, sonner (toasts), i18next, react-i18next, i18next-browser-languagedetector, @xterm/xterm, @xterm/addon-fit
 - **Exposes**: Embedded filesystem via `web.DistFS()` consumed by Go backend
 

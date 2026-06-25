@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -12,12 +13,20 @@ import (
 	"belochka/internal/config"
 )
 
+var version = "dev"
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
 	configPath := flag.String("config", "", "path to configuration file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("belochka", version)
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
