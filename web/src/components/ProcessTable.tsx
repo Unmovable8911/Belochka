@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react"
 import { ArrowUp, ArrowDown } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { formatPercent } from "@/lib/format"
 import type { Process } from "@/hooks/useMonitorState"
 import {
@@ -14,12 +15,12 @@ import {
 type SortColumn = "pid" | "user" | "cpuPct" | "memPct" | "command"
 type SortDirection = "asc" | "desc"
 
-const COLUMN_HEADERS: { key: SortColumn; label: string }[] = [
-  { key: "pid", label: "PID" },
-  { key: "user", label: "User" },
-  { key: "cpuPct", label: "CPU%" },
-  { key: "memPct", label: "Memory%" },
-  { key: "command", label: "Command" },
+const COLUMN_KEYS: { key: SortColumn; i18nKey: string }[] = [
+  { key: "pid", i18nKey: "processTable.pid" },
+  { key: "user", i18nKey: "processTable.user" },
+  { key: "cpuPct", i18nKey: "processTable.cpuPct" },
+  { key: "memPct", i18nKey: "processTable.memPct" },
+  { key: "command", i18nKey: "processTable.command" },
 ]
 
 interface ProcessTableProps {
@@ -27,6 +28,7 @@ interface ProcessTableProps {
 }
 
 export function ProcessTable({ processes }: ProcessTableProps) {
+  const { t } = useTranslation()
   const [sortColumn, setSortColumn] = useState<SortColumn>("cpuPct")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
 
@@ -47,14 +49,14 @@ export function ProcessTable({ processes }: ProcessTableProps) {
   }, [processes, sortColumn, sortDirection])
 
   if (sortedProcesses.length === 0) {
-    return <p className="text-sm text-muted-foreground">No process data available.</p>
+    return <p className="text-sm text-muted-foreground">{t("serverDetail.noProcessData")}</p>
   }
 
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          {COLUMN_HEADERS.map(({ key, label }) => (
+          {COLUMN_KEYS.map(({ key, i18nKey }) => (
             <TableHead
               key={key}
               className="cursor-pointer select-none"
@@ -68,7 +70,7 @@ export function ProcessTable({ processes }: ProcessTableProps) {
               }}
             >
               <span className="inline-flex items-center gap-1">
-                {label}
+                {t(i18nKey)}
                 {sortColumn === key && (
                   sortDirection === "asc"
                     ? <ArrowUp className="size-3" />

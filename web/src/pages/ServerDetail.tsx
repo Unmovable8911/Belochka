@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
 import { ArrowLeft, Trash2 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
@@ -10,6 +11,7 @@ import { UsageBar } from "@/components/UsageBar"
 import { ProcessTable } from "@/components/ProcessTable"
 
 export default function ServerDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { state, dispatch } = useMonitorState()
   const navigate = useNavigate()
@@ -24,10 +26,10 @@ export default function ServerDetail() {
       <div className="p-6">
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4">
           <ArrowLeft className="size-4" />
-          Back to Dashboard
+          {t("serverDetail.backToDashboard")}
         </Link>
-        <h1 className="text-2xl font-bold">Server not found</h1>
-        <p className="text-muted-foreground">The server you are looking for does not exist or has been removed.</p>
+        <h1 className="text-2xl font-bold">{t("serverDetail.notFound")}</h1>
+        <p className="text-muted-foreground">{t("serverDetail.notFoundHint")}</p>
       </div>
     )
   }
@@ -38,7 +40,7 @@ export default function ServerDetail() {
     <div className="p-6">
       <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="size-4" />
-        Back to Dashboard
+        {t("serverDetail.backToDashboard")}
       </Link>
 
       <div className="flex items-center justify-between mb-6">
@@ -50,7 +52,7 @@ export default function ServerDetail() {
           onClick={() => setDeleteOpen(true)}
         >
           <Trash2 className="size-4 mr-1" />
-          Delete
+          {t("serverDetail.delete")}
         </Button>
       </div>
 
@@ -64,38 +66,35 @@ export default function ServerDetail() {
         }}
       />
 
-      {/* System Info Bar */}
       {system && (
         <div className="flex flex-wrap gap-6 mb-8 rounded-lg border bg-card p-4" data-testid="system-info-bar">
           <div>
-            <div className="text-xs text-muted-foreground">Hostname</div>
+            <div className="text-xs text-muted-foreground">{t("serverDetail.hostname")}</div>
             <div className="text-sm font-medium">{system.hostname}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">Kernel</div>
+            <div className="text-xs text-muted-foreground">{t("serverDetail.kernel")}</div>
             <div className="text-sm font-medium">{system.kernel}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">Uptime</div>
+            <div className="text-xs text-muted-foreground">{t("serverDetail.uptime")}</div>
             <div className="text-sm font-medium">{formatUptime(system.uptimeSec)}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">OS</div>
+            <div className="text-xs text-muted-foreground">{t("serverDetail.os")}</div>
             <div className="text-sm font-medium">{system.osName}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">Cores</div>
+            <div className="text-xs text-muted-foreground">{t("serverDetail.cores")}</div>
             <div className="text-sm font-medium">{system.coreCount} cores</div>
           </div>
         </div>
       )}
 
-      {/* 2x2 Grid: CPU | Memory over Disk | Network */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="metrics-grid">
-        {/* CPU Section */}
         {metrics?.cpu && (
           <div className="rounded-lg border bg-card p-4">
-            <h2 className="text-lg font-semibold mb-4">CPU</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("serverDetail.cpu")}</h2>
             <div className="flex flex-col items-center gap-6 md:flex-row md:items-start">
               <RingGauge value={metrics.cpu.aggregate.usagePercent} testId="cpu-ring-gauge" />
               <div className="flex-1 w-full space-y-2">
@@ -113,10 +112,9 @@ export default function ServerDetail() {
           </div>
         )}
 
-        {/* Memory Section */}
         {metrics?.memory && (
           <div className="rounded-lg border bg-card p-4">
-            <h2 className="text-lg font-semibold mb-4">Memory</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("serverDetail.memory")}</h2>
             <div className="flex flex-col items-center gap-4">
               <RingGauge
                 value={metrics.memory.total > 0 ? (metrics.memory.used / metrics.memory.total) * 100 : 0}
@@ -127,17 +125,16 @@ export default function ServerDetail() {
               </div>
               {metrics.memory.swapTotal > 0 && (
                 <div className="text-sm text-muted-foreground text-center" data-testid="swap-info">
-                  Swap: {formatBytes(metrics.memory.swapUsed)} / {formatBytes(metrics.memory.swapTotal)}
+                  {t("serverDetail.swap")}: {formatBytes(metrics.memory.swapUsed)} / {formatBytes(metrics.memory.swapTotal)}
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Disk Section */}
         {metrics?.disk && (
           <div className="rounded-lg border bg-card p-4">
-            <h2 className="text-lg font-semibold mb-4">Disk</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("serverDetail.disk")}</h2>
             <div className="space-y-3">
               {metrics.disk.partitions.map((partition) => {
                 const pct = partition.total > 0 ? (partition.used / partition.total) * 100 : 0
@@ -155,10 +152,9 @@ export default function ServerDetail() {
           </div>
         )}
 
-        {/* Network Section */}
         {metrics?.network && (
           <div className="rounded-lg border bg-card p-4" data-testid="network-section">
-            <h2 className="text-lg font-semibold mb-4">Network</h2>
+            <h2 className="text-lg font-semibold mb-4">{t("serverDetail.network")}</h2>
             <div className="space-y-3">
               {metrics.network.interfaces.map((iface) => (
                 <div key={iface.name} className="flex items-center justify-between text-sm">
@@ -174,10 +170,9 @@ export default function ServerDetail() {
         )}
       </div>
 
-      {/* Process Table */}
       {metrics?.process && (
         <div className="mt-6" data-testid="process-section">
-          <h2 className="text-lg font-semibold mb-4">Processes</h2>
+          <h2 className="text-lg font-semibold mb-4">{t("serverDetail.processes")}</h2>
           <ProcessTable processes={metrics.process.processes} />
         </div>
       )}

@@ -1,0 +1,88 @@
+{
+  "dashboard": {
+    "title": "Dashboard",
+    "noServers": "No servers configured",
+    "noServersHint": "Add a server to start monitoring its CPU, memory, disk, and network metrics.",
+    "addFirstServer": "Add your first server"
+  },
+  "serverDetail": {
+    "backToDashboard": "Back to Dashboard",
+    "notFound": "Server not found",
+    "notFoundHint": "The server you are looking for does not exist or has been removed.",
+    "hostname": "Hostname",
+    "kernel": "Kernel",
+    "uptime": "Uptime",
+    "os": "OS",
+    "cores": "Cores",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "network": "Network",
+    "processes": "Processes",
+    "noProcessData": "No process data available.",
+    "delete": "Delete",
+    "swap": "Swap"
+  },
+  "serverCard": {
+    "cpu": "CPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "network": "Network",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting ({{attempts}}/∞)",
+    "authFailed": "Auth failed — check configuration",
+    "hostKeyMismatch": "Host key mismatch — check configuration"
+  },
+  "addServer": {
+    "title": "Add Server",
+    "trigger": "Add Server",
+    "name": "Name",
+    "host": "Host",
+    "port": "Port",
+    "username": "Username",
+    "authentication": "Authentication",
+    "password": "Password",
+    "keyFilePath": "Key File Path",
+    "hostKeyFingerprint": "Host Key Fingerprint",
+    "trustThisHost": "Trust this host",
+    "hostTrusted": "Host trusted",
+    "testConnection": "Test Connection",
+    "testing": "Testing...",
+    "save": "Save",
+    "saving": "Saving...",
+    "savedSuccess": "Server \"{{name}}\" added successfully",
+    "connectionTestFailed": "Connection test failed",
+    "saveFailed": "Failed to save server"
+  },
+  "editServer": {
+    "title": "Edit Server",
+    "retestRequired": "Connection fields changed. Re-test required before saving.",
+    "savedSuccess": "Server \"{{name}}\" updated successfully"
+  },
+  "deleteServer": {
+    "title": "Delete Server",
+    "confirm": "Are you sure you want to delete <strong>{{name}}</strong>? This action cannot be undone.",
+    "deletedSuccess": "Server \"{{name}}\" deleted",
+    "deleteFailed": "Failed to delete server",
+    "deleting": "Deleting..."
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "close": "Close"
+  },
+  "connection": {
+    "lost": "Connection lost, reconnecting..."
+  },
+  "processTable": {
+    "pid": "PID",
+    "user": "User",
+    "cpuPct": "CPU%",
+    "memPct": "Memory%",
+    "command": "Command"
+  },
+  "language": {
+    "label": "Language"
+  }
+}

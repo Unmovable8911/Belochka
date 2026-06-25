@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { PlusIcon } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ export interface AddServerDialogProps {
 }
 
 export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAuthType = "password", triggerLabel }: AddServerDialogProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(defaultOpen)
   const [form, setForm] = useState<ServerFormData>({ ...initialFormData, authType: defaultAuthType })
   const [testing, setTesting] = useState(false)
@@ -109,7 +111,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
       const result = await api.testConnection(serverId)
       setFingerprint(result.fingerprint)
     } catch (err) {
-      setTestError(err instanceof Error ? err.message : "Connection test failed")
+      setTestError(err instanceof Error ? err.message : t("addServer.connectionTestFailed"))
     } finally {
       setTesting(false)
     }
@@ -132,12 +134,12 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
           : { key_path: form.keyPath }),
       })
 
-      toast.success(`Server "${saved.name}" added successfully`)
+      toast.success(t("addServer.savedSuccess", { name: saved.name }))
       onServerAdded?.(saved)
       setOpen(false)
       resetState()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save server")
+      toast.error(err instanceof Error ? err.message : t("addServer.saveFailed"))
     } finally {
       setSaving(false)
     }
@@ -151,17 +153,17 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
       <DialogTrigger asChild>
         <Button>
           <PlusIcon className="size-4" />
-          {triggerLabel ?? "Add Server"}
+          {triggerLabel ?? t("addServer.trigger")}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Server</DialogTitle>
+          <DialogTitle>{t("addServer.title")}</DialogTitle>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="server-name">Name</Label>
+            <Label htmlFor="server-name">{t("addServer.name")}</Label>
             <Input
               id="server-name"
               placeholder="Production Web Server"
@@ -172,7 +174,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <div className="grid gap-2">
-              <Label htmlFor="server-host">Host</Label>
+              <Label htmlFor="server-host">{t("addServer.host")}</Label>
               <Input
                 id="server-host"
                 placeholder="192.168.1.100"
@@ -181,7 +183,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="server-port">Port</Label>
+              <Label htmlFor="server-port">{t("addServer.port")}</Label>
               <Input
                 id="server-port"
                 type="number"
@@ -193,7 +195,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="server-username">Username</Label>
+            <Label htmlFor="server-username">{t("addServer.username")}</Label>
             <Input
               id="server-username"
               placeholder="root"
@@ -203,7 +205,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
           </div>
 
           <div className="grid gap-2">
-            <Label id="auth-type-label">Authentication</Label>
+            <Label id="auth-type-label">{t("addServer.authentication")}</Label>
             <Select
               value={form.authType}
               onValueChange={(value: AuthType) => updateField("authType", value)}
@@ -220,7 +222,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
 
           {form.authType === "password" ? (
             <div className="grid gap-2">
-              <Label htmlFor="server-password">Password</Label>
+              <Label htmlFor="server-password">{t("addServer.password")}</Label>
               <Input
                 id="server-password"
                 type="password"
@@ -230,7 +232,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
             </div>
           ) : (
             <div className="grid gap-2">
-              <Label htmlFor="server-keypath">Key File Path</Label>
+              <Label htmlFor="server-keypath">{t("addServer.keyFilePath")}</Label>
               <Input
                 id="server-keypath"
                 placeholder="/home/user/.ssh/id_rsa"
@@ -248,7 +250,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
 
           {fingerprint && (
             <div className="rounded-md border p-3 space-y-2">
-              <p className="text-sm font-medium">Host Key Fingerprint</p>
+              <p className="text-sm font-medium">{t("addServer.hostKeyFingerprint")}</p>
               <code className="block text-xs break-all bg-muted p-2 rounded">
                 {fingerprint}
               </code>
@@ -258,11 +260,11 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
                   size="sm"
                   onClick={() => setFingerprintTrusted(true)}
                 >
-                  Trust this host
+                  {t("addServer.trustThisHost")}
                 </Button>
               ) : (
                 <p className="text-sm text-green-600 dark:text-green-400">
-                  Host trusted
+                  {t("addServer.hostTrusted")}
                 </p>
               )}
             </div>
@@ -275,10 +277,10 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
             onClick={handleTestConnection}
             disabled={!canTest}
           >
-            {testing ? "Testing..." : "Test Connection"}
+            {testing ? t("addServer.testing") : t("addServer.testConnection")}
           </Button>
           <Button onClick={handleSave} disabled={!canSave}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? t("addServer.saving") : t("addServer.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

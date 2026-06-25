@@ -1,0 +1,88 @@
+{
+  "dashboard": {
+    "title": "Tableau de bord",
+    "noServers": "Aucun serveur configuré",
+    "noServersHint": "Ajoutez un serveur pour commencer à surveiller ses métriques CPU, mémoire, disque et réseau.",
+    "addFirstServer": "Ajoutez votre premier serveur"
+  },
+  "serverDetail": {
+    "backToDashboard": "Retour au tableau de bord",
+    "notFound": "Serveur introuvable",
+    "notFoundHint": "Le serveur que vous recherchez n'existe pas ou a été supprimé.",
+    "hostname": "Nom d'hôte",
+    "kernel": "Noyau",
+    "uptime": "Disponibilité",
+    "os": "Système d'exploitation",
+    "cores": "Cœurs",
+    "cpu": "CPU",
+    "memory": "Mémoire",
+    "disk": "Disque",
+    "network": "Réseau",
+    "processes": "Processus",
+    "noProcessData": "Aucune donnée de processus disponible.",
+    "delete": "Supprimer",
+    "swap": "Swap"
+  },
+  "serverCard": {
+    "cpu": "CPU",
+    "memory": "Mémoire",
+    "disk": "Disque",
+    "network": "Réseau",
+    "connecting": "Connexion en cours...",
+    "reconnecting": "Reconnexion ({{attempts}}/∞)",
+    "authFailed": "Échec d'authentification — vérifiez la configuration",
+    "hostKeyMismatch": "Clé d'hôte non correspondante — vérifiez la configuration"
+  },
+  "addServer": {
+    "title": "Ajouter un serveur",
+    "trigger": "Ajouter un serveur",
+    "name": "Nom",
+    "host": "Hôte",
+    "port": "Port",
+    "username": "Nom d'utilisateur",
+    "authentication": "Authentification",
+    "password": "Mot de passe",
+    "keyFilePath": "Chemin du fichier clé",
+    "hostKeyFingerprint": "Empreinte de la clé d'hôte",
+    "trustThisHost": "Faire confiance à cet hôte",
+    "hostTrusted": "Hôte approuvé",
+    "testConnection": "Tester la connexion",
+    "testing": "Test en cours...",
+    "save": "Enregistrer",
+    "saving": "Enregistrement...",
+    "savedSuccess": "Serveur \"{{name}}\" ajouté avec succès",
+    "connectionTestFailed": "Échec du test de connexion",
+    "saveFailed": "Échec de l'enregistrement du serveur"
+  },
+  "editServer": {
+    "title": "Modifier le serveur",
+    "retestRequired": "Les champs de connexion ont changé. Un nouveau test est requis avant l'enregistrement.",
+    "savedSuccess": "Serveur \"{{name}}\" mis à jour avec succès"
+  },
+  "deleteServer": {
+    "title": "Supprimer le serveur",
+    "confirm": "Êtes-vous sûr de vouloir supprimer <strong>{{name}}</strong> ? Cette action est irréversible.",
+    "deletedSuccess": "Serveur \"{{name}}\" supprimé",
+    "deleteFailed": "Échec de la suppression du serveur",
+    "deleting": "Suppression..."
+  },
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "close": "Fermer"
+  },
+  "connection": {
+    "lost": "Connexion perdue, reconnexion en cours..."
+  },
+  "processTable": {
+    "pid": "PID",
+    "user": "Utilisateur",
+    "cpuPct": "CPU%",
+    "memPct": "Mémoire%",
+    "command": "Commande"
+  },
+  "language": {
+    "label": "Langue"
+  }
+}

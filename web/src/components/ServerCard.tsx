@@ -1,6 +1,7 @@
 import React from "react"
 import { Link } from "react-router-dom"
 import { WifiOff, Loader2, ShieldAlert, KeyRound } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { UsageBar } from "@/components/UsageBar"
@@ -45,7 +46,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
   }
 }
 
-function getDisconnectedDisplay(server: ServerInfo): {
+function getDisconnectedDisplay(server: ServerInfo, t: (key: string, opts?: Record<string, unknown>) => string): {
   icon: React.ReactNode
   message: string
 } | null {
@@ -56,32 +57,32 @@ function getDisconnectedDisplay(server: ServerInfo): {
     if (err.toLowerCase().includes("host key mismatch")) {
       return {
         icon: <ShieldAlert className="size-8 text-destructive" />,
-        message: "Host key mismatch — check configuration",
+        message: t("serverCard.hostKeyMismatch"),
       }
     }
     return {
       icon: <KeyRound className="size-8 text-destructive" />,
-      message: "Auth failed — check configuration",
+      message: t("serverCard.authFailed"),
     }
   }
 
-  // reconnecting
   const attempts = server.attempts ?? 0
   if (attempts === 0) {
     return {
       icon: <Loader2 className="size-8 text-muted-foreground animate-spin" />,
-      message: "Connecting...",
+      message: t("serverCard.connecting"),
     }
   }
 
   return {
     icon: <WifiOff className="size-8 text-muted-foreground" />,
-    message: `Reconnecting (${attempts}/∞)`,
+    message: t("serverCard.reconnecting", { attempts }),
   }
 }
 
 const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCardProps) {
-  const disconnected = getDisconnectedDisplay(server)
+  const { t } = useTranslation()
+  const disconnected = getDisconnectedDisplay(server, t)
 
   const cpuPercent = metrics?.cpu.aggregate.usagePercent
   const memPercent = metrics?.memory
@@ -123,16 +124,16 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
         ) : metrics ? (
           <CardContent className="space-y-3">
             {cpuPercent !== undefined && (
-              <UsageBar label="CPU" value={cpuPercent} rightText={formatPercent(cpuPercent)} ariaLabel="CPU usage" />
+              <UsageBar label={t("serverCard.cpu")} value={cpuPercent} rightText={formatPercent(cpuPercent)} ariaLabel="CPU usage" />
             )}
 
             {memPercent !== undefined && (
-              <UsageBar label="Memory" value={memPercent} rightText={formatPercent(memPercent)} ariaLabel="Memory usage" />
+              <UsageBar label={t("serverCard.memory")} value={memPercent} rightText={formatPercent(memPercent)} ariaLabel="Memory usage" />
             )}
 
             {highestDisk && diskPercent !== undefined && (
               <UsageBar
-                label={<>Disk <span className="text-muted-foreground">({highestDisk.mountPoint})</span></>}
+                label={<>{t("serverCard.disk")} <span className="text-muted-foreground">({highestDisk.mountPoint})</span></>}
                 value={diskPercent}
                 rightText={formatPercent(diskPercent)}
                 ariaLabel="Disk usage"
@@ -142,7 +143,7 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
             {hasNetwork && (
               <div className="space-y-1">
                 <div className="flex justify-between text-sm">
-                  <span>Network</span>
+                  <span>{t("serverCard.network")}</span>
                   <span>
                     <span aria-label="receive">↓ {formatNetworkSpeed(aggregatedRx)}</span>
                     {" "}

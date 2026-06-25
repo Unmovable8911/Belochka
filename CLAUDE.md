@@ -13,6 +13,10 @@ Belochka (белочка, "squirrel") — a single-binary Go+React web app for m
 - Write or modify files only in English.
 - When commit, do not mention *Co-Authored-By: Claude* in the commit message
 
+## Requirements
+
+- Read `CODEBASE.md` at the start of every conversation for project context.
+
 ## Future Consideration
 
 - Web terminal / SSH console

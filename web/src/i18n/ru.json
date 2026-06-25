@@ -1,0 +1,88 @@
+{
+  "dashboard": {
+    "title": "Панель мониторинга",
+    "noServers": "Серверы не настроены",
+    "noServersHint": "Добавьте сервер, чтобы начать мониторинг CPU, памяти, дисков и сети.",
+    "addFirstServer": "Добавьте ваш первый сервер"
+  },
+  "serverDetail": {
+    "backToDashboard": "Назад к панели мониторинга",
+    "notFound": "Сервер не найден",
+    "notFoundHint": "Сервер, который вы ищете, не существует или был удалён.",
+    "hostname": "Имя хоста",
+    "kernel": "Ядро",
+    "uptime": "Время работы",
+    "os": "ОС",
+    "cores": "Ядра",
+    "cpu": "CPU",
+    "memory": "Память",
+    "disk": "Диск",
+    "network": "Сеть",
+    "processes": "Процессы",
+    "noProcessData": "Данные о процессах недоступны.",
+    "delete": "Удалить",
+    "swap": "Подкачка"
+  },
+  "serverCard": {
+    "cpu": "CPU",
+    "memory": "Память",
+    "disk": "Диск",
+    "network": "Сеть",
+    "connecting": "Подключение...",
+    "reconnecting": "Переподключение ({{attempts}}/∞)",
+    "authFailed": "Ошибка аутентификации — проверьте конфигурацию",
+    "hostKeyMismatch": "Несоответствие ключа хоста — проверьте конфигурацию"
+  },
+  "addServer": {
+    "title": "Добавить сервер",
+    "trigger": "Добавить сервер",
+    "name": "Имя",
+    "host": "Хост",
+    "port": "Порт",
+    "username": "Имя пользователя",
+    "authentication": "Аутентификация",
+    "password": "Пароль",
+    "keyFilePath": "Путь к файлу ключа",
+    "hostKeyFingerprint": "Отпечаток ключа хоста",
+    "trustThisHost": "Доверять этому хосту",
+    "hostTrusted": "Хост доверен",
+    "testConnection": "Проверить соединение",
+    "testing": "Проверка...",
+    "save": "Сохранить",
+    "saving": "Сохранение...",
+    "savedSuccess": "Сервер \"{{name}}\" добавлен успешно",
+    "connectionTestFailed": "Ошибка проверки соединения",
+    "saveFailed": "Не удалось сохранить сервер"
+  },
+  "editServer": {
+    "title": "Редактировать сервер",
+    "retestRequired": "Поля подключения изменены. Перед сохранением требуется повторная проверка.",
+    "savedSuccess": "Сервер \"{{name}}\" обновлён успешно"
+  },
+  "deleteServer": {
+    "title": "Удалить сервер",
+    "confirm": "Вы уверены, что хотите удалить <strong>{{name}}</strong>? Это действие необратимо.",
+    "deletedSuccess": "Сервер \"{{name}}\" удалён",
+    "deleteFailed": "Не удалось удалить сервер",
+    "deleting": "Удаление..."
+  },
+  "common": {
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "delete": "Удалить",
+    "close": "Закрыть"
+  },
+  "connection": {
+    "lost": "Соединение потеряно, переподключение..."
+  },
+  "processTable": {
+    "pid": "PID",
+    "user": "Пользователь",
+    "cpuPct": "CPU%",
+    "memPct": "Память%",
+    "command": "Команда"
+  },
+  "language": {
+    "label": "Язык"
+  }
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useTranslation } from "react-i18next"
 import {
   Dialog,
   DialogContent,
@@ -70,6 +71,7 @@ export function EditServerDialog({
   onOpenChange,
   onServerUpdated,
 }: EditServerDialogProps) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<ServerFormData>(() => serverToForm(server))
   const [originalForm] = useState<ServerFormData>(() => serverToForm(server))
   const [testing, setTesting] = useState(false)
@@ -154,7 +156,7 @@ export function EditServerDialog({
       setFingerprint(result.fingerprint)
     } catch (err) {
       setTestError(
-        err instanceof Error ? err.message : "Connection test failed",
+        err instanceof Error ? err.message : t("addServer.connectionTestFailed"),
       )
     } finally {
       setTesting(false)
@@ -172,11 +174,11 @@ export function EditServerDialog({
       }
 
       const saved = await api.updateServer(server.id, buildUpdateBody(extras))
-      toast.success(`Server "${saved.name}" updated successfully`)
+      toast.success(t("editServer.savedSuccess", { name: saved.name }))
       onServerUpdated?.(saved)
       onOpenChange(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save server")
+      toast.error(err instanceof Error ? err.message : t("addServer.saveFailed"))
     } finally {
       setSaving(false)
     }
@@ -186,12 +188,12 @@ export function EditServerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit Server</DialogTitle>
+          <DialogTitle>{t("editServer.title")}</DialogTitle>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="edit-server-name">Name</Label>
+            <Label htmlFor="edit-server-name">{t("addServer.name")}</Label>
             <Input
               id="edit-server-name"
               placeholder="Production Web Server"
@@ -202,7 +204,7 @@ export function EditServerDialog({
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <div className="grid gap-2">
-              <Label htmlFor="edit-server-host">Host</Label>
+              <Label htmlFor="edit-server-host">{t("addServer.host")}</Label>
               <Input
                 id="edit-server-host"
                 placeholder="192.168.1.100"
@@ -211,7 +213,7 @@ export function EditServerDialog({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-server-port">Port</Label>
+              <Label htmlFor="edit-server-port">{t("addServer.port")}</Label>
               <Input
                 id="edit-server-port"
                 type="number"
@@ -225,7 +227,7 @@ export function EditServerDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="edit-server-username">Username</Label>
+            <Label htmlFor="edit-server-username">{t("addServer.username")}</Label>
             <Input
               id="edit-server-username"
               placeholder="root"
@@ -235,7 +237,7 @@ export function EditServerDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label id="edit-auth-type-label">Authentication</Label>
+            <Label id="edit-auth-type-label">{t("addServer.authentication")}</Label>
             <Select
               value={form.authType}
               onValueChange={(value: AuthType) =>
@@ -257,7 +259,7 @@ export function EditServerDialog({
 
           {form.authType === "password" ? (
             <div className="grid gap-2">
-              <Label htmlFor="edit-server-password">Password</Label>
+              <Label htmlFor="edit-server-password">{t("addServer.password")}</Label>
               <Input
                 id="edit-server-password"
                 type="password"
@@ -268,7 +270,7 @@ export function EditServerDialog({
             </div>
           ) : (
             <div className="grid gap-2">
-              <Label htmlFor="edit-server-keypath">Key File Path</Label>
+              <Label htmlFor="edit-server-keypath">{t("addServer.keyFilePath")}</Label>
               <Input
                 id="edit-server-keypath"
                 placeholder="/home/user/.ssh/id_rsa"
@@ -289,7 +291,7 @@ export function EditServerDialog({
 
           {fingerprint && (
             <div className="rounded-md border p-3 space-y-2">
-              <p className="text-sm font-medium">Host Key Fingerprint</p>
+              <p className="text-sm font-medium">{t("addServer.hostKeyFingerprint")}</p>
               <code className="block text-xs break-all bg-muted p-2 rounded">
                 {fingerprint}
               </code>
@@ -299,11 +301,11 @@ export function EditServerDialog({
                   size="sm"
                   onClick={() => setFingerprintTrusted(true)}
                 >
-                  Trust this host
+                  {t("addServer.trustThisHost")}
                 </Button>
               ) : (
                 <p className="text-sm text-green-600 dark:text-green-400">
-                  Host trusted
+                  {t("addServer.hostTrusted")}
                 </p>
               )}
             </div>
@@ -311,7 +313,7 @@ export function EditServerDialog({
 
           {needsRetest && !testPassed && !testError && !testing && (
             <p className="text-sm text-yellow-600 dark:text-yellow-400">
-              Connection fields changed. Re-test required before saving.
+              {t("editServer.retestRequired")}
             </p>
           )}
         </div>
@@ -323,11 +325,11 @@ export function EditServerDialog({
               onClick={handleTestConnection}
               disabled={!canTest}
             >
-              {testing ? "Testing..." : "Test Connection"}
+              {testing ? t("addServer.testing") : t("addServer.testConnection")}
             </Button>
           )}
           <Button onClick={handleSave} disabled={!canSave}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? t("addServer.saving") : t("addServer.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

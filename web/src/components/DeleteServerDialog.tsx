@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation, Trans } from "react-i18next"
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ export function DeleteServerDialog({
   onOpenChange,
   onDeleted,
 }: DeleteServerDialogProps) {
+  const { t } = useTranslation()
   const [deleting, setDeleting] = useState(false)
 
   async function handleDelete() {
@@ -35,12 +37,12 @@ export function DeleteServerDialog({
       if (err instanceof ApiError && err.code === "not_found") {
         // Already deleted — treat as success
       } else {
-        toast.error(err instanceof Error ? err.message : "Failed to delete server")
+        toast.error(err instanceof Error ? err.message : t("deleteServer.deleteFailed"))
         setDeleting(false)
         return
       }
     }
-    toast.success(`Server "${server.name}" deleted`)
+    toast.success(t("deleteServer.deletedSuccess", { name: server.name }))
     onDeleted(server.id)
     onOpenChange(false)
     setDeleting(false)
@@ -50,10 +52,13 @@ export function DeleteServerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Delete Server</DialogTitle>
+          <DialogTitle>{t("deleteServer.title")}</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <strong>{server.name}</strong>? This
-            action cannot be undone.
+            <Trans
+              i18nKey="deleteServer.confirm"
+              values={{ name: server.name }}
+              components={{ strong: <strong /> }}
+            />
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -62,14 +67,14 @@ export function DeleteServerDialog({
             onClick={() => onOpenChange(false)}
             disabled={deleting}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             variant="destructive"
             onClick={handleDelete}
             disabled={deleting}
           >
-            {deleting ? "Deleting..." : "Delete"}
+            {deleting ? t("deleteServer.deleting") : t("common.delete")}
           </Button>
         </DialogFooter>
       </DialogContent>

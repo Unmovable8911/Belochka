@@ -1,6 +1,8 @@
+import { useTranslation } from "react-i18next"
 import { useMonitorState } from "../hooks/useMonitorState"
 
 export function ConnectionBanner() {
+  const { t } = useTranslation()
   const { state } = useMonitorState()
 
   if (state.wsConnected) {
@@ -12,7 +14,7 @@ export function ConnectionBanner() {
       role="alert"
       className="bg-destructive text-destructive-foreground px-4 py-2 text-center text-sm font-medium"
     >
-      Connection lost, reconnecting...
+      {t("connection.lost")}
     </div>
   )
 }
