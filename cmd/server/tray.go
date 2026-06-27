@@ -63,5 +63,9 @@ func openBrowser(url string) {
 	}
 	if err := cmd.Start(); err != nil {
 		slog.Warn("failed to open browser", "url", url, "error", err)
+		return
 	}
+	// Reap the child so it does not linger as a zombie for the lifetime of the
+	// long-running tray process across repeated "Open Dashboard" clicks.
+	go func() { _ = cmd.Wait() }()
 }
