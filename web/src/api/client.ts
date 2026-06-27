@@ -36,6 +36,10 @@ export async function getServer(id: string): Promise<Server> {
   return request<Server>(`/api/servers/${id}`)
 }
 
+export async function getServer(id: string): Promise<Server> {
+  return request<Server>(`/api/servers/${id}`)
+}
+
 export async function createServer(data: Record<string, unknown>): Promise<Server> {
   return request<Server>("/api/servers", {
     method: "POST",
