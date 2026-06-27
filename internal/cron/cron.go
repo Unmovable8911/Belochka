@@ -96,6 +96,65 @@ func BuildCronLine(entry CronEntry) string {
 		entry.Minute, entry.Hour, entry.DayOfMonth, entry.Month, entry.DayOfWeek, entry.Command)
 }
 
+// BuildLine constructs a cron line respecting the Enabled flag. Disabled entries
+// are written with the "#[disabled] " prefix; enabled entries are plain lines.
+func BuildLine(entry CronEntry) string {
+	plain := BuildCronLine(entry)
+	if !entry.Enabled {
+		return disabledPrefix + plain
+	}
+	return plain
+}
+
+// ReplaceCronEntry rebuilds the crontab string, replacing the cron entry at
+// entryIndex (zero-based position in the entries array) with newEntry, or
+// removing it when newEntry is nil. Passthrough lines are preserved in their
+// original positions. Returns the new crontab content.
+func ReplaceCronEntry(crontab string, entryIndex int, newEntry *CronEntry) string {
+	var out []string
+	idx := 0
+	for _, line := range strings.Split(crontab, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+
+		if isCronEntry(line) {
+			if idx == entryIndex {
+				if newEntry != nil {
+					out = append(out, BuildLine(*newEntry))
+				}
+				// nil → delete: skip this line
+			} else {
+				out = append(out, line)
+			}
+			idx++
+		} else {
+			out = append(out, line)
+		}
+	}
+
+	if len(out) == 0 {
+		return ""
+	}
+	return strings.Join(out, "\n") + "\n"
+}
+
+// isCronEntry reports whether a raw crontab line is a cron schedule entry
+// (either enabled or the "#[disabled] " prefixed form).
+func isCronEntry(line string) bool {
+	if strings.HasPrefix(line, disabledPrefix) {
+		inner := strings.TrimPrefix(line, disabledPrefix)
+		_, ok := parseCronLine(inner)
+		return ok
+	}
+	if strings.HasPrefix(line, "#") || isEnvVar(line) {
+		return false
+	}
+	_, ok := parseCronLine(line)
+	return ok
+}
+
 // isEnvVar reports whether line looks like a shell env var assignment (NAME=value).
 func isEnvVar(line string) bool {
 	eqIdx := strings.Index(line, "=")

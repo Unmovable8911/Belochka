@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import {
   Dialog,
@@ -59,15 +59,37 @@ export interface AddCronDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated: (entry: CronEntry) => void
+  /** When provided, dialog operates in edit mode. */
+  editEntry?: CronEntry
+  editIndex?: number
 }
 
 const defaultFields = { minute: "*", hour: "*", dayOfMonth: "*", month: "*", dayOfWeek: "*", command: "" }
 
-export function AddCronDialog({ serverId, open, onOpenChange, onCreated }: AddCronDialogProps) {
+export function AddCronDialog({ serverId, open, onOpenChange, onCreated, editEntry, editIndex }: AddCronDialogProps) {
   const { t } = useTranslation()
+  const isEditMode = editEntry !== undefined && editIndex !== undefined
   const [fields, setFields] = useState({ ...defaultFields })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Sync fields when editEntry changes (dialog opened for edit)
+  useEffect(() => {
+    if (open && editEntry) {
+      setFields({
+        minute: editEntry.minute,
+        hour: editEntry.hour,
+        dayOfMonth: editEntry.dayOfMonth,
+        month: editEntry.month,
+        dayOfWeek: editEntry.dayOfWeek,
+        command: editEntry.command,
+      })
+      setError(null)
+    } else if (open && !editEntry) {
+      setFields({ ...defaultFields })
+      setError(null)
+    }
+  }, [open, editEntry])
 
   function handleOpenChange(next: boolean) {
     if (!saving) {
@@ -96,14 +118,27 @@ export function AddCronDialog({ serverId, open, onOpenChange, onCreated }: AddCr
     setSaving(true)
     setError(null)
     try {
-      const entry = await api.createCron(serverId, {
-        minute: fields.minute,
-        hour: fields.hour,
-        dayOfMonth: fields.dayOfMonth,
-        month: fields.month,
-        dayOfWeek: fields.dayOfWeek,
-        command: fields.command,
-      })
+      let entry: CronEntry
+      if (isEditMode) {
+        entry = await api.updateCron(serverId, editIndex!, {
+          minute: fields.minute,
+          hour: fields.hour,
+          dayOfMonth: fields.dayOfMonth,
+          month: fields.month,
+          dayOfWeek: fields.dayOfWeek,
+          command: fields.command,
+          enabled: editEntry!.enabled,
+        })
+      } else {
+        entry = await api.createCron(serverId, {
+          minute: fields.minute,
+          hour: fields.hour,
+          dayOfMonth: fields.dayOfMonth,
+          month: fields.month,
+          dayOfWeek: fields.dayOfWeek,
+          command: fields.command,
+        })
+      }
       onCreated(entry)
       onOpenChange(false)
       setFields({ ...defaultFields })
@@ -136,7 +171,7 @@ export function AddCronDialog({ serverId, open, onOpenChange, onCreated }: AddCr
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("cronJobs.addDialogTitle")}</DialogTitle>
+          <DialogTitle>{isEditMode ? t("cronJobs.editDialogTitle") : t("cronJobs.addDialogTitle")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">

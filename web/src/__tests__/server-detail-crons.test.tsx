@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Routes, Route } from "react-router-dom"
 import {
@@ -12,20 +12,24 @@ import ServerDetail from "../pages/ServerDetail"
 import type { Dispatch } from "react"
 import type { CronResult } from "../types/server"
 
-// Mock the API module so we can control getCrons/createCron responses
+// Mock the API module so we can control getCrons/createCron/updateCron/deleteCron responses
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>()
   return {
     ...actual,
     getCrons: vi.fn(),
     createCron: vi.fn(),
+    updateCron: vi.fn(),
+    deleteCron: vi.fn(),
   }
 })
 
-import { getCrons, createCron } from "../api/client"
+import { getCrons, createCron, updateCron, deleteCron } from "../api/client"
 
 const mockGetCrons = vi.mocked(getCrons)
 const mockCreateCron = vi.mocked(createCron)
+const mockUpdateCron = vi.mocked(updateCron)
+const mockDeleteCron = vi.mocked(deleteCron)
 
 function makeServer() {
   return { id: "srv-1", name: "Web Server", host: "10.0.0.1", status: "connected" }
@@ -345,5 +349,225 @@ describe("ServerDetail — Add Cron dialog", () => {
     })
     // Dialog should still be open
     expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+})
+
+// Helper: make a cron entry
+function makeCronEntry(overrides: Partial<CronResult["entries"][0]> = {}): CronResult["entries"][0] {
+  return {
+    minute: "0", hour: "*", dayOfMonth: "*", month: "*", dayOfWeek: "*",
+    command: "/usr/bin/hourly.sh", enabled: true, raw: "0 * * * * /usr/bin/hourly.sh",
+    ...overrides,
+  }
+}
+
+describe("ServerDetail — Edit cron", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => cleanup())
+
+  async function openCronTabWithEntry(user: ReturnType<typeof userEvent.setup>, entry = makeCronEntry()) {
+    mockGetCrons.mockResolvedValue({ entries: [entry], passthroughs: [] })
+    renderDetail(baseState)
+    await user.click(screen.getByRole("tab", { name: /cron jobs/i }))
+    await waitFor(() => expect(screen.getByText(entry.command)).toBeInTheDocument())
+  }
+
+  it("each row has an edit button", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument()
+  })
+
+  it("clicking edit opens dialog pre-populated with entry values", async () => {
+    const user = userEvent.setup()
+    const entry = makeCronEntry({ minute: "30", hour: "2", command: "/usr/bin/weekly.sh" })
+    await openCronTabWithEntry(user, entry)
+
+    await user.click(screen.getByRole("button", { name: /edit/i }))
+
+    // Dialog is open and fields are pre-populated
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+    expect(screen.getByDisplayValue("30")).toBeInTheDocument()
+    expect(screen.getByDisplayValue("2")).toBeInTheDocument()
+    expect(screen.getByDisplayValue("/usr/bin/weekly.sh")).toBeInTheDocument()
+  })
+
+  it("saving edit calls updateCron and refreshes table", async () => {
+    const original = makeCronEntry({ command: "/usr/bin/hourly.sh" })
+    const updated = makeCronEntry({ command: "/usr/bin/new.sh", minute: "15" })
+    mockUpdateCron.mockResolvedValue(updated)
+    mockGetCrons.mockResolvedValue({ entries: [original], passthroughs: [] })
+
+    const user = userEvent.setup()
+    renderDetail(baseState)
+    await user.click(screen.getByRole("tab", { name: /cron jobs/i }))
+    await waitFor(() => expect(screen.getByText("/usr/bin/hourly.sh")).toBeInTheDocument())
+
+    await user.click(screen.getByRole("button", { name: /edit/i }))
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+
+    // Change command
+    const commandInput = screen.getByDisplayValue("/usr/bin/hourly.sh")
+    await user.clear(commandInput)
+    await user.type(commandInput, "/usr/bin/new.sh")
+
+    await user.click(screen.getByRole("button", { name: /save/i }))
+
+    await waitFor(() => expect(mockUpdateCron).toHaveBeenCalledOnce())
+    // Dialog closes
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    // Updated command shown in table
+    await waitFor(() => expect(screen.getByText("/usr/bin/new.sh")).toBeInTheDocument())
+  })
+
+  it("edit API error shows inline error in dialog", async () => {
+    mockUpdateCron.mockRejectedValue(new Error("permission denied"))
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+
+    await user.click(screen.getByRole("button", { name: /edit/i }))
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+
+    await user.click(screen.getByRole("button", { name: /save/i }))
+
+    await waitFor(() => expect(screen.getByTestId("add-cron-error")).toBeInTheDocument())
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+})
+
+describe("ServerDetail — Delete cron", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => cleanup())
+
+  async function openCronTabWithEntry(user: ReturnType<typeof userEvent.setup>, entry = makeCronEntry()) {
+    mockGetCrons.mockResolvedValue({ entries: [entry], passthroughs: [] })
+    renderDetail(baseState)
+    await user.click(screen.getByRole("tab", { name: /cron jobs/i }))
+    await waitFor(() => expect(screen.getByText(entry.command)).toBeInTheDocument())
+  }
+
+  it("each row has a delete button", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    const cronTab = screen.getByTestId("cron-jobs-tab")
+    expect(within(cronTab).getByRole("button", { name: /delete/i })).toBeInTheDocument()
+  })
+
+  it("clicking delete opens confirmation dialog", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    const cronTab = screen.getByTestId("cron-jobs-tab")
+
+    await user.click(within(cronTab).getByRole("button", { name: /delete/i }))
+
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument())
+  })
+
+  it("confirming delete calls deleteCron and removes entry from table", async () => {
+    mockDeleteCron.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    const cronTab = screen.getByTestId("cron-jobs-tab")
+
+    await user.click(within(cronTab).getByRole("button", { name: /delete/i }))
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument())
+
+    // Confirm deletion — button is inside the alertdialog
+    const dialog = screen.getByRole("alertdialog")
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }))
+
+    await waitFor(() => expect(mockDeleteCron).toHaveBeenCalledWith("srv-1", 0))
+    // Entry removed from table
+    await waitFor(() => expect(screen.queryByText("/usr/bin/hourly.sh")).not.toBeInTheDocument())
+  })
+
+  it("cancelling confirmation dialog does not call deleteCron", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    const cronTab = screen.getByTestId("cron-jobs-tab")
+
+    await user.click(within(cronTab).getByRole("button", { name: /delete/i }))
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument())
+
+    const dialog = screen.getByRole("alertdialog")
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }))
+
+    expect(mockDeleteCron).not.toHaveBeenCalled()
+    // Entry still in table
+    expect(screen.getByText("/usr/bin/hourly.sh")).toBeInTheDocument()
+  })
+
+  it("delete failure shows inline row error", async () => {
+    mockDeleteCron.mockRejectedValue(new Error("permission denied"))
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    const cronTab = screen.getByTestId("cron-jobs-tab")
+
+    await user.click(within(cronTab).getByRole("button", { name: /delete/i }))
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument())
+    const dialog = screen.getByRole("alertdialog")
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }))
+
+    await waitFor(() => expect(screen.getByTestId("cron-row-error-0")).toBeInTheDocument())
+  })
+})
+
+describe("ServerDetail — Toggle cron enable/disable", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => cleanup())
+
+  async function openCronTabWithEntry(user: ReturnType<typeof userEvent.setup>, entry = makeCronEntry()) {
+    mockGetCrons.mockResolvedValue({ entries: [entry], passthroughs: [] })
+    renderDetail(baseState)
+    await user.click(screen.getByRole("tab", { name: /cron jobs/i }))
+    await waitFor(() => expect(screen.getByText(entry.command)).toBeInTheDocument())
+  }
+
+  it("each row has a toggle switch in the enabled column", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    expect(screen.getByRole("switch")).toBeInTheDocument()
+  })
+
+  it("toggle calls updateCron with enabled flipped", async () => {
+    const entry = makeCronEntry({ enabled: true })
+    const toggled = makeCronEntry({ enabled: false })
+    mockUpdateCron.mockResolvedValue(toggled)
+
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user, entry)
+
+    await user.click(screen.getByRole("switch"))
+
+    await waitFor(() =>
+      expect(mockUpdateCron).toHaveBeenCalledWith("srv-1", 0, expect.objectContaining({ enabled: false }))
+    )
+  })
+
+  it("failed toggle reverts switch and shows inline row error", async () => {
+    const entry = makeCronEntry({ enabled: true })
+    mockUpdateCron.mockRejectedValue(new Error("SSH error"))
+
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user, entry)
+
+    const toggle = screen.getByRole("switch")
+    const wasChecked = toggle.getAttribute("aria-checked") === "true" || toggle.getAttribute("data-state") === "checked"
+    await user.click(toggle)
+
+    // After failure, row error appears
+    await waitFor(() => expect(screen.getByTestId("cron-row-error-0")).toBeInTheDocument())
+    // Toggle reverted to original state
+    await waitFor(() => {
+      const t = screen.getByRole("switch")
+      const nowChecked = t.getAttribute("aria-checked") === "true" || t.getAttribute("data-state") === "checked"
+      expect(nowChecked).toBe(wasChecked)
+    })
   })
 })

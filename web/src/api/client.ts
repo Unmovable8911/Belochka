@@ -84,3 +84,25 @@ export async function createCron(serverId: string, payload: CreateCronPayload): 
     body: JSON.stringify(payload),
   })
 }
+
+export interface UpdateCronPayload {
+  minute: string
+  hour: string
+  dayOfMonth: string
+  month: string
+  dayOfWeek: string
+  command: string
+  enabled: boolean
+}
+
+export async function updateCron(serverId: string, index: number, payload: UpdateCronPayload): Promise<CronEntry> {
+  return request<CronEntry>(`/api/servers/${serverId}/crons/${index}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteCron(serverId: string, index: number): Promise<void> {
+  return request<void>(`/api/servers/${serverId}/crons/${index}`, { method: "DELETE" })
+}

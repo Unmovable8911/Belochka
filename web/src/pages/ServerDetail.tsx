@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Plus, Terminal, Trash2 } from "lucide-react"
+import { ArrowLeft, Pencil, Plus, Terminal, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { AlertDialog } from "radix-ui"
 import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
@@ -11,7 +12,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
 import { ProcessTable } from "@/components/ProcessTable"
-import { getCrons } from "@/api/client"
+import { getCrons, updateCron, deleteCron } from "@/api/client"
 import type { CronEntry, CronResult } from "@/types/server"
 
 type Tab = "overview" | "crons"
@@ -30,6 +31,16 @@ export default function ServerDetail() {
   const [cronsError, setCronsError] = useState<string | null>(null)
   const [cronsResult, setCronsResult] = useState<CronResult | null>(null)
   const [cronsFetched, setCronsFetched] = useState(false)
+
+  // Edit state
+  const [editEntry, setEditEntry] = useState<CronEntry | undefined>(undefined)
+  const [editIndex, setEditIndex] = useState<number | undefined>(undefined)
+
+  // Delete confirm state
+  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null)
+
+  // Per-row errors
+  const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
 
   const server = state.servers.find((s) => s.id === id)
   const metrics = id ? state.metrics[id] : undefined
@@ -50,10 +61,108 @@ export default function ServerDetail() {
     fetchCrons()
   }, [activeTab, id, cronsFetched])
 
+  function setRowError(index: number, msg: string) {
+    setRowErrors((prev) => ({ ...prev, [index]: msg }))
+  }
+  function clearRowError(index: number) {
+    setRowErrors((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+  }
+
   function handleCronCreated(entry: CronEntry) {
-    setCronsResult((prev) =>
-      prev ? { ...prev, entries: [...prev.entries, entry] } : { entries: [entry], passthroughs: [] }
-    )
+    if (editIndex !== undefined) {
+      // Replace entry at editIndex
+      setCronsResult((prev) => {
+        if (!prev) return prev
+        const entries = prev.entries.map((e, i) => (i === editIndex ? entry : e))
+        return { ...prev, entries }
+      })
+    } else {
+      setCronsResult((prev) =>
+        prev ? { ...prev, entries: [...prev.entries, entry] } : { entries: [entry], passthroughs: [] }
+      )
+    }
+    setEditEntry(undefined)
+    setEditIndex(undefined)
+  }
+
+  function handleOpenAdd() {
+    setEditEntry(undefined)
+    setEditIndex(undefined)
+    setAddCronOpen(true)
+  }
+
+  function handleOpenEdit(entry: CronEntry, index: number) {
+    setEditEntry(entry)
+    setEditIndex(index)
+    setAddCronOpen(true)
+  }
+
+  async function handleToggle(index: number) {
+    if (!id || !cronsResult) return
+    const entry = cronsResult.entries[index]
+    clearRowError(index)
+    const toggled = { ...entry, enabled: !entry.enabled }
+    // Optimistically update
+    setCronsResult((prev) => {
+      if (!prev) return prev
+      const entries = prev.entries.map((e, i) => (i === index ? toggled : e))
+      return { ...prev, entries }
+    })
+    try {
+      const updated = await updateCron(id, index, {
+        minute: entry.minute,
+        hour: entry.hour,
+        dayOfMonth: entry.dayOfMonth,
+        month: entry.month,
+        dayOfWeek: entry.dayOfWeek,
+        command: entry.command,
+        enabled: !entry.enabled,
+      })
+      setCronsResult((prev) => {
+        if (!prev) return prev
+        const entries = prev.entries.map((e, i) => (i === index ? updated : e))
+        return { ...prev, entries }
+      })
+    } catch (err) {
+      // Revert
+      setCronsResult((prev) => {
+        if (!prev) return prev
+        const entries = prev.entries.map((e, i) => (i === index ? entry : e))
+        return { ...prev, entries }
+      })
+      setRowError(index, err instanceof Error ? err.message : t("cronJobs.toggleFailed"))
+    }
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!id || deleteConfirmIndex === null || !cronsResult) return
+    const index = deleteConfirmIndex
+    setDeleteConfirmIndex(null)
+    clearRowError(index)
+    try {
+      await deleteCron(id, index)
+      setCronsResult((prev) => {
+        if (!prev) return prev
+        const entries = prev.entries.filter((_, i) => i !== index)
+        return { ...prev, entries }
+      })
+      // Shift row errors for indices above the deleted one
+      setRowErrors((prev) => {
+        const next: Record<number, string> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          const ki = parseInt(k, 10)
+          if (ki < index) next[ki] = v
+          else if (ki > index) next[ki - 1] = v
+        }
+        return next
+      })
+    } catch (err) {
+      setRowError(index, err instanceof Error ? err.message : t("cronJobs.deleteRowFailed"))
+    }
   }
 
   if (!server) {
@@ -117,10 +226,43 @@ export default function ServerDetail() {
         <AddCronDialog
           serverId={id}
           open={addCronOpen}
-          onOpenChange={setAddCronOpen}
+          onOpenChange={(next) => {
+            setAddCronOpen(next)
+            if (!next) {
+              setEditEntry(undefined)
+              setEditIndex(undefined)
+            }
+          }}
           onCreated={handleCronCreated}
+          editEntry={editEntry}
+          editIndex={editIndex}
         />
       )}
+
+      {/* Delete cron confirmation dialog */}
+      <AlertDialog.Root open={deleteConfirmIndex !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmIndex(null) }}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+          <AlertDialog.Content className="fixed top-[50%] left-[50%] z-50 w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] rounded-lg border bg-background p-6 shadow-lg sm:max-w-lg">
+            <AlertDialog.Title className="text-lg font-semibold">
+              {t("cronJobs.deleteConfirmTitle")}
+            </AlertDialog.Title>
+            <AlertDialog.Description className="mt-2 text-sm text-muted-foreground">
+              {t("cronJobs.deleteConfirmMessage")}
+            </AlertDialog.Description>
+            <div className="mt-4 flex justify-end gap-2">
+              <AlertDialog.Cancel asChild>
+                <Button variant="outline">{t("cronJobs.cancel")}</Button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <Button variant="destructive" onClick={handleDeleteConfirmed}>
+                  {t("cronJobs.deleteConfirm")}
+                </Button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b mb-6" role="tablist">
@@ -272,7 +414,7 @@ export default function ServerDetail() {
           <div className="flex justify-end mb-4">
             <Button
               size="sm"
-              onClick={() => setAddCronOpen(true)}
+              onClick={handleOpenAdd}
               className="cursor-pointer"
             >
               <Plus className="size-4 mr-1" />
@@ -311,21 +453,67 @@ export default function ServerDetail() {
               </thead>
               <tbody>
                 {cronsResult.entries.map((entry, index) => (
-                  <tr key={index} className="border-b last:border-0">
-                    <td className="py-2 pr-4">
-                      <span
-                        data-testid={`cron-status-${index}`}
-                        className={`text-xs font-medium ${entry.enabled ? "text-green-600" : "text-muted-foreground"}`}
-                      >
-                        {entry.enabled ? t("cronJobs.statusEnabled") : t("cronJobs.statusDisabled")}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-4 font-mono text-xs">
-                      {`${entry.minute} ${entry.hour} ${entry.dayOfMonth} ${entry.month} ${entry.dayOfWeek}`}
-                    </td>
-                    <td className="py-2 pr-4 font-mono text-xs break-all">{entry.command}</td>
-                    <td className="py-2" />
-                  </tr>
+                  <>
+                    <tr key={index} className="border-b last:border-0">
+                      <td className="py-2 pr-4">
+                        <button
+                          role="switch"
+                          aria-checked={entry.enabled}
+                          data-state={entry.enabled ? "checked" : "unchecked"}
+                          data-testid={`cron-status-${index}`}
+                          onClick={() => handleToggle(index)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                            entry.enabled ? "bg-primary" : "bg-input"
+                          }`}
+                          aria-label={entry.enabled ? t("cronJobs.statusEnabled") : t("cronJobs.statusDisabled")}
+                        >
+                          <span
+                            className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform ${
+                              entry.enabled ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs">
+                        {`${entry.minute} ${entry.hour} ${entry.dayOfMonth} ${entry.month} ${entry.dayOfWeek}`}
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs break-all">{entry.command}</td>
+                      <td className="py-2">
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("cronJobs.editButton")}
+                            onClick={() => handleOpenEdit(entry, index)}
+                            className="cursor-pointer"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("cronJobs.deleteButton")}
+                            onClick={() => setDeleteConfirmIndex(index)}
+                            className="cursor-pointer text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                    {rowErrors[index] && (
+                      <tr key={`error-${index}`}>
+                        <td colSpan={4} className="pb-2 pt-0">
+                          <p
+                            data-testid={`cron-row-error-${index}`}
+                            className="text-xs text-destructive"
+                          >
+                            {rowErrors[index]}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>

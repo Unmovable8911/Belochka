@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,110 @@ func TestParseCrontab_EmptyOutputReturnsEmptyResult(t *testing.T) {
 	}
 	if len(result.Passthroughs) != 0 {
 		t.Errorf("expected 0 passthroughs, got %d", len(result.Passthroughs))
+	}
+}
+
+func TestBuildLine_Enabled(t *testing.T) {
+	entry := CronEntry{
+		Minute: "0", Hour: "2", DayOfMonth: "*", Month: "*", DayOfWeek: "1",
+		Command: "/usr/bin/weekly.sh", Enabled: true,
+	}
+	got := BuildLine(entry)
+	want := "0 2 * * 1 /usr/bin/weekly.sh"
+	if got != want {
+		t.Errorf("BuildLine(enabled) = %q, want %q", got, want)
+	}
+}
+
+func TestBuildLine_Disabled(t *testing.T) {
+	entry := CronEntry{
+		Minute: "*/5", Hour: "*", DayOfMonth: "*", Month: "*", DayOfWeek: "*",
+		Command: "/usr/bin/check.sh", Enabled: false,
+	}
+	got := BuildLine(entry)
+	want := "#[disabled] */5 * * * * /usr/bin/check.sh"
+	if got != want {
+		t.Errorf("BuildLine(disabled) = %q, want %q", got, want)
+	}
+}
+
+func TestReplaceCronEntry_ReplaceEnabled(t *testing.T) {
+	original := "MAILTO=root\n0 * * * * /usr/bin/hourly.sh\n30 2 * * 0 /usr/bin/weekly.sh\n"
+
+	updated := CronEntry{
+		Minute: "15", Hour: "3", DayOfMonth: "*", Month: "*", DayOfWeek: "0",
+		Command: "/usr/bin/daily.sh", Enabled: true,
+	}
+	got := ReplaceCronEntry(original, 1, &updated)
+
+	if !strings.Contains(got, "15 3 * * 0 /usr/bin/daily.sh") {
+		t.Errorf("missing updated entry in output: %q", got)
+	}
+	if strings.Contains(got, "30 2 * * 0 /usr/bin/weekly.sh") {
+		t.Errorf("old entry should be gone: %q", got)
+	}
+	if !strings.Contains(got, "0 * * * * /usr/bin/hourly.sh") {
+		t.Errorf("other entry should be preserved: %q", got)
+	}
+	if !strings.Contains(got, "MAILTO=root") {
+		t.Errorf("passthrough should be preserved: %q", got)
+	}
+}
+
+func TestReplaceCronEntry_ReplaceWithDisabled(t *testing.T) {
+	original := "0 * * * * /usr/bin/hourly.sh\n"
+
+	updated := CronEntry{
+		Minute: "0", Hour: "*", DayOfMonth: "*", Month: "*", DayOfWeek: "*",
+		Command: "/usr/bin/hourly.sh", Enabled: false,
+	}
+	got := ReplaceCronEntry(original, 0, &updated)
+
+	if !strings.Contains(got, "#[disabled] 0 * * * * /usr/bin/hourly.sh") {
+		t.Errorf("expected disabled line, got: %q", got)
+	}
+}
+
+func TestReplaceCronEntry_Delete(t *testing.T) {
+	original := "MAILTO=root\n# comment\n0 * * * * /usr/bin/hourly.sh\n30 2 * * 0 /usr/bin/weekly.sh\n"
+
+	got := ReplaceCronEntry(original, 0, nil)
+
+	if strings.Contains(got, "hourly.sh") {
+		t.Errorf("deleted entry should be gone: %q", got)
+	}
+	if !strings.Contains(got, "30 2 * * 0 /usr/bin/weekly.sh") {
+		t.Errorf("remaining entry should be preserved: %q", got)
+	}
+	if !strings.Contains(got, "MAILTO=root") {
+		t.Errorf("passthrough should be preserved: %q", got)
+	}
+	if !strings.Contains(got, "# comment") {
+		t.Errorf("comment passthrough should be preserved: %q", got)
+	}
+}
+
+func TestReplaceCronEntry_PreservesPassthroughOrder(t *testing.T) {
+	original := "# header\nMAILTO=root\n0 * * * * /usr/bin/hourly.sh\n# footer\n30 2 * * 0 /usr/bin/weekly.sh\n"
+
+	got := ReplaceCronEntry(original, 0, nil)
+
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	// After deleting index 0: header, MAILTO, footer, weekly
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "# header" {
+		t.Errorf("line 0 wrong: %q", lines[0])
+	}
+	if lines[1] != "MAILTO=root" {
+		t.Errorf("line 1 wrong: %q", lines[1])
+	}
+	if lines[2] != "# footer" {
+		t.Errorf("line 2 wrong: %q", lines[2])
+	}
+	if lines[3] != "30 2 * * 0 /usr/bin/weekly.sh" {
+		t.Errorf("line 3 wrong: %q", lines[3])
 	}
 }
 

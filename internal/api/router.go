@@ -102,6 +102,8 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 		ch := &cronHandler{executor: cfg.cronExecutor}
 		r.Get("/api/servers/{id}/crons", ch.listCrons)
 		r.Post("/api/servers/{id}/crons", ch.createCron)
+		r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)
+		r.Delete("/api/servers/{id}/crons/{index}", ch.deleteCron)
 	}
 
 	// Mount embedded static file serving if available (production mode).

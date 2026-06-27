@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -312,6 +313,252 @@ func TestCreateCron_SSHWriteError_Returns502(t *testing.T) {
 		"hour":    "*",
 		"command": "/usr/bin/job.sh",
 	})
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- PUT /api/servers/{id}/crons/{index} ---
+
+func putCron(router http.Handler, serverID string, index int, body interface{}) *httptest.ResponseRecorder {
+	data, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/servers/%s/crons/%d", serverID, index), bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestUpdateCron_ValidInput_Returns200WithUpdatedEntry(t *testing.T) {
+	existing := "0 * * * * /usr/bin/hourly.sh\n30 2 * * 0 /usr/bin/weekly.sh\n"
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		return "", nil
+	})
+
+	rec := putCron(router, "srv-1", 0, map[string]interface{}{
+		"minute":     "15",
+		"hour":       "6",
+		"dayOfMonth": "*",
+		"month":      "*",
+		"dayOfWeek":  "*",
+		"command":    "/usr/bin/new.sh",
+		"enabled":    true,
+	})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var entry map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&entry); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if entry["command"] != "/usr/bin/new.sh" {
+		t.Errorf("expected updated command, got %v", entry["command"])
+	}
+	if entry["minute"] != "15" || entry["hour"] != "6" {
+		t.Errorf("expected updated schedule, got minute=%v hour=%v", entry["minute"], entry["hour"])
+	}
+	if entry["enabled"] != true {
+		t.Errorf("expected enabled=true, got %v", entry["enabled"])
+	}
+}
+
+func TestUpdateCron_DisabledEntry_WritesDisabledLine(t *testing.T) {
+	existing := "0 * * * * /usr/bin/hourly.sh\n"
+	var writtenContent string
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		// Capture the written crontab.
+		content, err := decodeBase64FromWriteCmd(cmd)
+		if err == nil {
+			writtenContent = content
+		}
+		return "", nil
+	})
+
+	rec := putCron(router, "srv-1", 0, map[string]interface{}{
+		"minute":     "0",
+		"hour":       "*",
+		"dayOfMonth": "*",
+		"month":      "*",
+		"dayOfWeek":  "*",
+		"command":    "/usr/bin/hourly.sh",
+		"enabled":    false,
+	})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(writtenContent, "#[disabled] 0 * * * * /usr/bin/hourly.sh") {
+		t.Errorf("written content missing disabled line: %q", writtenContent)
+	}
+}
+
+func TestUpdateCron_PreservesPassthroughs(t *testing.T) {
+	existing := "MAILTO=root\n# comment\n0 * * * * /usr/bin/hourly.sh\n30 2 * * 0 /usr/bin/weekly.sh\n"
+	var writtenContent string
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		content, err := decodeBase64FromWriteCmd(cmd)
+		if err == nil {
+			writtenContent = content
+		}
+		return "", nil
+	})
+
+	putCron(router, "srv-1", 0, map[string]interface{}{
+		"minute": "*", "hour": "*", "dayOfMonth": "*", "month": "*", "dayOfWeek": "*",
+		"command": "/usr/bin/new.sh", "enabled": true,
+	})
+
+	if !strings.Contains(writtenContent, "MAILTO=root") {
+		t.Errorf("passthrough MAILTO missing: %q", writtenContent)
+	}
+	if !strings.Contains(writtenContent, "# comment") {
+		t.Errorf("passthrough comment missing: %q", writtenContent)
+	}
+	if !strings.Contains(writtenContent, "30 2 * * 0 /usr/bin/weekly.sh") {
+		t.Errorf("other entry missing: %q", writtenContent)
+	}
+}
+
+func TestUpdateCron_OutOfRange_Returns404(t *testing.T) {
+	existing := "0 * * * * /usr/bin/hourly.sh\n"
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		return "", nil
+	})
+
+	rec := putCron(router, "srv-1", 5, map[string]interface{}{
+		"minute": "*", "hour": "*", "dayOfMonth": "*", "month": "*", "dayOfWeek": "*",
+		"command": "/usr/bin/new.sh", "enabled": true,
+	})
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateCron_InvalidIndex_Returns400(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) { return "", nil })
+
+	data, _ := json.Marshal(map[string]interface{}{"command": "/usr/bin/x.sh", "enabled": true})
+	req := httptest.NewRequest(http.MethodPut, "/api/servers/srv-1/crons/notanumber", bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateCron_SSHReadError_Returns502(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return "", errSSHFailed
+		}
+		return "", nil
+	})
+
+	rec := putCron(router, "srv-1", 0, map[string]interface{}{
+		"minute": "*", "hour": "*", "dayOfMonth": "*", "month": "*", "dayOfWeek": "*",
+		"command": "/usr/bin/new.sh", "enabled": true,
+	})
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- DELETE /api/servers/{id}/crons/{index} ---
+
+func deleteCronReq(router http.Handler, serverID string, index int) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/servers/%s/crons/%d", serverID, index), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDeleteCron_ValidIndex_Returns204(t *testing.T) {
+	existing := "0 * * * * /usr/bin/hourly.sh\n30 2 * * 0 /usr/bin/weekly.sh\n"
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		return "", nil
+	})
+
+	rec := deleteCronReq(router, "srv-1", 0)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteCron_RemovesEntryPreservesPassthroughs(t *testing.T) {
+	existing := "MAILTO=root\n0 * * * * /usr/bin/hourly.sh\n30 2 * * 0 /usr/bin/weekly.sh\n"
+	var writtenContent string
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		content, err := decodeBase64FromWriteCmd(cmd)
+		if err == nil {
+			writtenContent = content
+		}
+		return "", nil
+	})
+
+	deleteCronReq(router, "srv-1", 0)
+
+	if strings.Contains(writtenContent, "hourly.sh") {
+		t.Errorf("deleted entry should be absent: %q", writtenContent)
+	}
+	if !strings.Contains(writtenContent, "MAILTO=root") {
+		t.Errorf("passthrough should be preserved: %q", writtenContent)
+	}
+	if !strings.Contains(writtenContent, "30 2 * * 0 /usr/bin/weekly.sh") {
+		t.Errorf("other entry should be preserved: %q", writtenContent)
+	}
+}
+
+func TestDeleteCron_OutOfRange_Returns404(t *testing.T) {
+	existing := "0 * * * * /usr/bin/hourly.sh\n"
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		return "", nil
+	})
+
+	rec := deleteCronReq(router, "srv-1", 5)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteCron_SSHReadError_Returns502(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return "", errSSHFailed
+		}
+		return "", nil
+	})
+
+	rec := deleteCronReq(router, "srv-1", 0)
 
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
