@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Pencil, Plus, Terminal, Trash2 } from "lucide-react"
+import { ArrowLeft, Pencil, Play, Plus, Terminal, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { AlertDialog } from "radix-ui"
 import { useMonitorState } from "@/hooks/useMonitorState"
@@ -12,8 +12,8 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
 import { ProcessTable } from "@/components/ProcessTable"
-import { getCrons, updateCron, deleteCron } from "@/api/client"
-import type { CronEntry, CronResult } from "@/types/server"
+import { getCrons, updateCron, deleteCron, runCron } from "@/api/client"
+import type { CronEntry, CronResult, CronRunResult } from "@/types/server"
 
 type Tab = "overview" | "crons"
 
@@ -41,6 +41,10 @@ export default function ServerDetail() {
 
   // Per-row errors
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
+
+  // Run cron now state
+  const [runningIndex, setRunningIndex] = useState<number | null>(null)
+  const [runResult, setRunResult] = useState<{ command: string; result: CronRunResult } | null>(null)
 
   const server = state.servers.find((s) => s.id === id)
   const metrics = id ? state.metrics[id] : undefined
@@ -99,6 +103,21 @@ export default function ServerDetail() {
     setEditEntry(entry)
     setEditIndex(index)
     setAddCronOpen(true)
+  }
+
+  async function handleRunCron(index: number) {
+    if (!id || !cronsResult) return
+    const entry = cronsResult.entries[index]
+    clearRowError(index)
+    setRunningIndex(index)
+    try {
+      const result = await runCron(id, index)
+      setRunResult({ command: entry.command, result })
+    } catch (err) {
+      setRowError(index, err instanceof Error ? err.message : t("cronJobs.runFailed"))
+    } finally {
+      setRunningIndex(null)
+    }
   }
 
   async function handleToggle(index: number) {
@@ -263,6 +282,40 @@ export default function ServerDetail() {
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+
+      {/* Run cron result dialog */}
+      {runResult !== null && (
+        <div role="dialog" data-testid="run-output-dialog" className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setRunResult(null)} />
+          <div className="relative z-10 w-full max-w-2xl rounded-lg border bg-background p-6 shadow-lg mx-4">
+            <h2 className="text-lg font-semibold mb-4">{t("cronJobs.runDialogTitle")}</h2>
+            <div className="mb-3">
+              <div className="text-xs text-muted-foreground mb-1">{t("cronJobs.runDialogCommand")}</div>
+              <code data-testid="run-command" className="text-sm font-mono bg-muted px-2 py-1 rounded break-all">{runResult.command}</code>
+            </div>
+            <div className="mb-3">
+              <div className="text-xs text-muted-foreground mb-1">{t("cronJobs.runDialogExitCode")}</div>
+              <span
+                data-testid="run-exit-code"
+                className={`text-sm font-mono font-semibold ${runResult.result.exitCode === 0 ? "text-green-600" : "text-destructive text-red-600"}`}
+              >
+                {runResult.result.exitCode}
+              </span>
+            </div>
+            <div className="mb-4">
+              <div className="text-xs text-muted-foreground mb-1">{t("cronJobs.runDialogOutput")}</div>
+              <textarea
+                readOnly
+                value={runResult.result.output}
+                className="w-full h-48 font-mono text-xs bg-muted rounded p-2 resize-none"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setRunResult(null)}>{t("cronJobs.runDialogClose")}</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b mb-6" role="tablist">
@@ -480,6 +533,20 @@ export default function ServerDetail() {
                       <td className="py-2 pr-4 font-mono text-xs break-all">{entry.command}</td>
                       <td className="py-2">
                         <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("cronJobs.runButton")}
+                            onClick={() => handleRunCron(index)}
+                            disabled={runningIndex === index}
+                            className="cursor-pointer"
+                          >
+                            {runningIndex === index ? (
+                              <span data-testid={`cron-run-spinner-${index}`} className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <Play className="size-4" />
+                            )}
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

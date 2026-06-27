@@ -136,6 +136,13 @@
     "deleteConfirm": "Supprimer",
     "toggleFailed": "Échec de la mise à jour de la tâche planifiée",
     "deleteRowFailed": "Échec de la suppression de la tâche planifiée",
+    "runButton": "Exécuter",
+    "runDialogTitle": "Résultat d'exécution",
+    "runDialogCommand": "Commande",
+    "runDialogExitCode": "Code de sortie",
+    "runDialogOutput": "Sortie",
+    "runDialogClose": "Fermer",
+    "runFailed": "Échec de l'exécution de la tâche planifiée",
     "dayNames": {
       "0": "dimanche",
       "1": "lundi",

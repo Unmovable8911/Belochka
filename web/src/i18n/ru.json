@@ -136,6 +136,13 @@
     "deleteConfirm": "Удалить",
     "toggleFailed": "Не удалось обновить задание cron",
     "deleteRowFailed": "Не удалось удалить задание cron",
+    "runButton": "Выполнить",
+    "runDialogTitle": "Результат выполнения",
+    "runDialogCommand": "Команда",
+    "runDialogExitCode": "Код выхода",
+    "runDialogOutput": "Вывод",
+    "runDialogClose": "Закрыть",
+    "runFailed": "Не удалось выполнить задание cron",
     "dayNames": {
       "0": "воскресенье",
       "1": "понедельник",

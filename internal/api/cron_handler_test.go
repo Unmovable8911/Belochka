@@ -564,3 +564,121 @@ func TestDeleteCron_SSHReadError_Returns502(t *testing.T) {
 		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// --- POST /api/servers/{id}/crons/{index}/run ---
+
+// mockCronRunner implements api.CronRunner for testing.
+type mockCronRunner struct {
+	output   string
+	exitCode int
+	err      error
+}
+
+func (m *mockCronRunner) RunCommand(_ context.Context, _, _ string) (string, int, error) {
+	return m.output, m.exitCode, m.err
+}
+
+func runCronReq(router http.Handler, serverID string, index int) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/servers/%s/crons/%d/run", serverID, index), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func setupRouterWithRunner(executor api.CronExecutor, runner api.CronRunner) http.Handler {
+	h := hub.New()
+	return api.NewRouter(h, api.WithCronExecutor(executor), api.WithCronRunner(runner))
+}
+
+func TestRunCron_ValidIndex_Returns200WithOutputAndExitCode(t *testing.T) {
+	executor := &mockCronExecutor{output: "0 * * * * /usr/bin/hourly.sh\n"}
+	runner := &mockCronRunner{output: "hello\n", exitCode: 0}
+	router := setupRouterWithRunner(executor, runner)
+
+	rec := runCronReq(router, "srv-1", 0)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if result["exitCode"].(float64) != 0 {
+		t.Errorf("expected exitCode 0, got %v", result["exitCode"])
+	}
+	if result["output"] != "hello\n" {
+		t.Errorf("expected output 'hello\\n', got %v", result["output"])
+	}
+}
+
+func TestRunCron_NonZeroExitCode_Returns200(t *testing.T) {
+	executor := &mockCronExecutor{output: "0 * * * * /usr/bin/fail.sh\n"}
+	runner := &mockCronRunner{output: "error output\n", exitCode: 1}
+	router := setupRouterWithRunner(executor, runner)
+
+	rec := runCronReq(router, "srv-1", 0)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 even for non-zero exit, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var result map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&result)
+	if result["exitCode"].(float64) != 1 {
+		t.Errorf("expected exitCode 1, got %v", result["exitCode"])
+	}
+	if result["output"] != "error output\n" {
+		t.Errorf("expected output 'error output\\n', got %v", result["output"])
+	}
+}
+
+func TestRunCron_InvalidIndex_Returns400(t *testing.T) {
+	executor := &mockCronExecutor{output: ""}
+	runner := &mockCronRunner{}
+	h := hub.New()
+	router := api.NewRouter(h, api.WithCronExecutor(executor), api.WithCronRunner(runner))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/srv-1/crons/notanumber/run", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRunCron_OutOfRange_Returns404(t *testing.T) {
+	executor := &mockCronExecutor{output: "0 * * * * /usr/bin/hourly.sh\n"}
+	runner := &mockCronRunner{}
+	router := setupRouterWithRunner(executor, runner)
+
+	rec := runCronReq(router, "srv-1", 5)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRunCron_SSHReadError_Returns502(t *testing.T) {
+	executor := &mockCronExecutor{err: errSSHFailed}
+	runner := &mockCronRunner{}
+	router := setupRouterWithRunner(executor, runner)
+
+	rec := runCronReq(router, "srv-1", 0)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRunCron_SSHExecuteError_Returns502(t *testing.T) {
+	executor := &mockCronExecutor{output: "0 * * * * /usr/bin/hourly.sh\n"}
+	runner := &mockCronRunner{err: errSSHFailed}
+	router := setupRouterWithRunner(executor, runner)
+
+	rec := runCronReq(router, "srv-1", 0)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

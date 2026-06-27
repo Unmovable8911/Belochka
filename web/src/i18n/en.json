@@ -136,6 +136,13 @@
     "deleteConfirm": "Delete",
     "toggleFailed": "Failed to update cron job",
     "deleteRowFailed": "Failed to delete cron job",
+    "runButton": "Run",
+    "runDialogTitle": "Run Result",
+    "runDialogCommand": "Command",
+    "runDialogExitCode": "Exit Code",
+    "runDialogOutput": "Output",
+    "runDialogClose": "Close",
+    "runFailed": "Failed to run cron job",
     "dayNames": {
       "0": "Sunday",
       "1": "Monday",

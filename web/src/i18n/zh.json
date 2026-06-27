@@ -136,6 +136,13 @@
     "deleteConfirm": "删除",
     "toggleFailed": "更新定时任务失败",
     "deleteRowFailed": "删除定时任务失败",
+    "runButton": "运行",
+    "runDialogTitle": "运行结果",
+    "runDialogCommand": "命令",
+    "runDialogExitCode": "退出代码",
+    "runDialogOutput": "输出",
+    "runDialogClose": "关闭",
+    "runFailed": "运行定时任务失败",
     "dayNames": {
       "0": "日",
       "1": "一",

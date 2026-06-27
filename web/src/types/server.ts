@@ -42,3 +42,8 @@ export interface CronResult {
   entries: CronEntry[]
   passthroughs: string[]
 }
+
+export interface CronRunResult {
+  exitCode: number
+  output: string
+}

@@ -12,7 +12,7 @@ import ServerDetail from "../pages/ServerDetail"
 import type { Dispatch } from "react"
 import type { CronResult } from "../types/server"
 
-// Mock the API module so we can control getCrons/createCron/updateCron/deleteCron responses
+// Mock the API module so we can control getCrons/createCron/updateCron/deleteCron/runCron responses
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>()
   return {
@@ -21,15 +21,17 @@ vi.mock("../api/client", async (importOriginal) => {
     createCron: vi.fn(),
     updateCron: vi.fn(),
     deleteCron: vi.fn(),
+    runCron: vi.fn(),
   }
 })
 
-import { getCrons, createCron, updateCron, deleteCron } from "../api/client"
+import { getCrons, createCron, updateCron, deleteCron, runCron } from "../api/client"
 
 const mockGetCrons = vi.mocked(getCrons)
 const mockCreateCron = vi.mocked(createCron)
 const mockUpdateCron = vi.mocked(updateCron)
 const mockDeleteCron = vi.mocked(deleteCron)
+const mockRunCron = vi.mocked(runCron)
 
 function makeServer() {
   return { id: "srv-1", name: "Web Server", host: "10.0.0.1", status: "connected" }
@@ -569,5 +571,100 @@ describe("ServerDetail — Toggle cron enable/disable", () => {
       const nowChecked = t.getAttribute("aria-checked") === "true" || t.getAttribute("data-state") === "checked"
       expect(nowChecked).toBe(wasChecked)
     })
+  })
+})
+
+describe("ServerDetail — Run cron now", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+  afterEach(() => cleanup())
+
+  async function openCronTabWithEntry(user: ReturnType<typeof userEvent.setup>, entry = makeCronEntry()) {
+    mockGetCrons.mockResolvedValue({ entries: [entry], passthroughs: [] })
+    renderDetail(baseState)
+    await user.click(screen.getByRole("tab", { name: /cron jobs/i }))
+    await waitFor(() => expect(screen.getByText(entry.command)).toBeInTheDocument())
+  }
+
+  it("each cron row has a run button", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    expect(screen.getByRole("button", { name: /run/i })).toBeInTheDocument()
+  })
+
+  it("clicking run shows spinner and disables the button while command is in flight", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    // Never resolves — simulates command still running
+    mockRunCron.mockReturnValue(new Promise(() => {}))
+
+    await user.click(screen.getByRole("button", { name: /run/i }))
+
+    expect(screen.getByTestId("cron-run-spinner-0")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /run/i })).toBeDisabled()
+  })
+
+  it("on success, opens dialog showing command, exit code, and output", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    mockRunCron.mockResolvedValue({ exitCode: 0, output: "hello world\n" })
+
+    await user.click(screen.getByRole("button", { name: /run/i }))
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+    expect(screen.getByTestId("run-output-dialog")).toBeInTheDocument()
+    expect(screen.getByTestId("run-exit-code")).toBeInTheDocument()
+    expect(screen.getByText(/hello world/)).toBeInTheDocument()
+    // Shows the command that was run
+    expect(screen.getByTestId("run-command")).toBeInTheDocument()
+  })
+
+  it("exit code 0 has green styling", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    mockRunCron.mockResolvedValue({ exitCode: 0, output: "" })
+
+    await user.click(screen.getByRole("button", { name: /run/i }))
+
+    await waitFor(() => expect(screen.getByTestId("run-exit-code")).toBeInTheDocument())
+    const exitCodeEl = screen.getByTestId("run-exit-code")
+    expect(exitCodeEl.className).toMatch(/green|success/)
+  })
+
+  it("non-zero exit code has red/destructive styling", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    mockRunCron.mockResolvedValue({ exitCode: 1, output: "error\n" })
+
+    await user.click(screen.getByRole("button", { name: /run/i }))
+
+    await waitFor(() => expect(screen.getByTestId("run-exit-code")).toBeInTheDocument())
+    const exitCodeEl = screen.getByTestId("run-exit-code")
+    expect(exitCodeEl.className).toMatch(/red|destructive/)
+  })
+
+  it("dialog has a close button that closes the dialog", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    mockRunCron.mockResolvedValue({ exitCode: 0, output: "" })
+
+    await user.click(screen.getByRole("button", { name: /run/i }))
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+
+    await user.click(screen.getByRole("button", { name: /close/i }))
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  })
+
+  it("SSH/network failure shows inline row error with no dialog", async () => {
+    const user = userEvent.setup()
+    await openCronTabWithEntry(user)
+    mockRunCron.mockRejectedValue(new Error("SSH connection refused"))
+
+    await user.click(screen.getByRole("button", { name: /run/i }))
+
+    await waitFor(() => expect(screen.getByTestId("cron-row-error-0")).toBeInTheDocument())
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 })

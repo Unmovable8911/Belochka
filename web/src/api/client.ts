@@ -1,4 +1,4 @@
-import type { Server, TestResult, CronResult, CronEntry } from "@/types/server"
+import type { Server, TestResult, CronResult, CronEntry, CronRunResult } from "@/types/server"
 
 export class ApiError extends Error {
   code: string
@@ -105,4 +105,8 @@ export async function updateCron(serverId: string, index: number, payload: Updat
 
 export async function deleteCron(serverId: string, index: number): Promise<void> {
   return request<void>(`/api/servers/${serverId}/crons/${index}`, { method: "DELETE" })
+}
+
+export async function runCron(serverId: string, index: number): Promise<CronRunResult> {
+  return request<CronRunResult>(`/api/servers/${serverId}/crons/${index}/run`, { method: "POST" })
 }

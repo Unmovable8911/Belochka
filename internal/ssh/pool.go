@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -204,6 +205,43 @@ func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error
 	}
 
 	return string(output), nil
+}
+
+// RunCommand executes a command and returns combined stdout+stderr, the exit code,
+// and any connection-level error. Unlike Execute, a non-zero exit code is not an
+// error — it is returned as exitCode. Only SSH connection failures return a non-nil error.
+func (p *Pool) RunCommand(ctx context.Context, serverID, cmd string) (string, int, error) {
+	p.mu.RLock()
+	mc, ok := p.conns[serverID]
+	p.mu.RUnlock()
+
+	if !ok {
+		return "", -1, fmt.Errorf("no connection for server %s", serverID)
+	}
+
+	mc.mu.RLock()
+	client := mc.client
+	mc.mu.RUnlock()
+
+	if client == nil {
+		return "", -1, fmt.Errorf("server %s not connected", serverID)
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", -1, err
+	}
+	defer session.Close()
+
+	output, err := session.CombinedOutput(cmd)
+	if err != nil {
+		var exitErr *gossh.ExitError
+		if errors.As(err, &exitErr) {
+			return string(output), exitErr.ExitStatus(), nil
+		}
+		return "", -1, err
+	}
+	return string(output), 0, nil
 }
 
 // OpenSession creates a new SSH session on the existing connection for the given server.

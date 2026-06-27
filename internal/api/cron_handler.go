@@ -19,9 +19,16 @@ type CronExecutor interface {
 	Execute(ctx context.Context, serverID, cmd string) (string, error)
 }
 
-// cronHandler handles the cron list endpoint.
+// CronRunner executes a cron command and returns combined stdout+stderr output
+// and the exit code. Unlike CronExecutor, a non-zero exit code is not an error.
+type CronRunner interface {
+	RunCommand(ctx context.Context, serverID, cmd string) (output string, exitCode int, err error)
+}
+
+// cronHandler handles cron endpoints.
 type cronHandler struct {
 	executor CronExecutor
+	runner   CronRunner
 }
 
 func (h *cronHandler) listCrons(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +160,41 @@ func (h *cronHandler) updateCron(w http.ResponseWriter, r *http.Request) {
 
 	entry.Raw = cron.BuildLine(entry)
 	writeJSON(w, http.StatusOK, entry)
+}
+
+type runCronResponse struct {
+	ExitCode int    `json:"exitCode"`
+	Output   string `json:"output"`
+}
+
+func (h *cronHandler) runCron(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	idx, err := strconv.Atoi(chi.URLParam(r, "index"))
+	if err != nil || idx < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
+		return
+	}
+
+	existing, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
+		return
+	}
+
+	parsed := cron.ParseCrontab(existing)
+	if idx >= len(parsed.Entries) {
+		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+		return
+	}
+
+	entry := parsed.Entries[idx]
+	output, exitCode, err := h.runner.RunCommand(r.Context(), id, entry.Command)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to execute command: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, runCronResponse{ExitCode: exitCode, Output: output})
 }
 
 func (h *cronHandler) deleteCron(w http.ResponseWriter, r *http.Request) {
