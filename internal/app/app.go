@@ -93,9 +93,9 @@ func (a *Application) Start(ctx context.Context) error {
 	routerOpts = append(routerOpts, api.WithServerStore(a.store))
 	routerOpts = append(routerOpts, api.WithSSHTester(sshTester{}))
 	routerOpts = append(routerOpts, api.WithOnServerChange(onServerChange))
-	routerOpts = append(routerOpts, api.WithTerminalSessionOpener(&terminal.SSHSessionOpener{
-		OpenFn: a.pool.OpenSession,
-	}))
+	routerOpts = append(routerOpts, api.WithTerminalHandler(a.terminalHandler))
+	routerOpts = append(routerOpts, api.WithCronExecutor(a.pool))
+	routerOpts = append(routerOpts, api.WithCronRunner(a.pool))
 
 	distFS, err := web.DistFS()
 	if err != nil {

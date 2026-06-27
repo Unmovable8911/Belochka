@@ -49,7 +49,6 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
   const [fingerprint, setFingerprint] = useState<string | null>(null)
   const [fingerprintTrusted, setFingerprintTrusted] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [createdServerId, setCreatedServerId] = useState<string | null>(null)
 
   function resetState() {
     setForm({ ...initialFormData })
@@ -58,7 +57,6 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
     setFingerprint(null)
     setFingerprintTrusted(false)
     setSaving(false)
-    setCreatedServerId(null)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -74,7 +72,6 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
     setTestError(null)
     setFingerprint(null)
     setFingerprintTrusted(false)
-    setCreatedServerId(null)
   }
 
   function isFormValid(): boolean {
@@ -85,6 +82,20 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
     )
   }
 
+  function buildServerBody(extras?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      name: form.name.trim(),
+      host: form.host.trim(),
+      port: form.port,
+      username: form.username.trim(),
+      auth_type: form.authType,
+      ...extras,
+      ...(form.authType === "password"
+        ? { password: form.password }
+        : { key_path: form.keyPath }),
+    }
+  }
+
   async function handleTestConnection() {
     setTesting(true)
     setTestError(null)
@@ -92,23 +103,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
     setFingerprintTrusted(false)
 
     try {
-      let serverId = createdServerId
-      if (!serverId) {
-        const created = await api.createServer({
-          name: form.name.trim(),
-          host: form.host.trim(),
-          port: form.port,
-          username: form.username.trim(),
-          auth_type: form.authType,
-          ...(form.authType === "password"
-            ? { password: form.password }
-            : { key_path: form.keyPath }),
-        })
-        serverId = created.id
-        setCreatedServerId(serverId)
-      }
-
-      const result = await api.testConnection(serverId)
+      const result = await api.testConnection(buildServerBody())
       setFingerprint(result.fingerprint)
     } catch (err) {
       setTestError(err instanceof Error ? err.message : t("addServer.connectionTestFailed"))
@@ -118,21 +113,13 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
   }
 
   async function handleSave() {
-    if (!createdServerId || !fingerprint || !fingerprintTrusted) return
+    if (!fingerprint || !fingerprintTrusted) return
 
     setSaving(true)
     try {
-      const saved = await api.updateServer(createdServerId, {
-        name: form.name.trim(),
-        host: form.host.trim(),
-        port: form.port,
-        username: form.username.trim(),
-        auth_type: form.authType,
-        host_key_fingerprint: fingerprint,
-        ...(form.authType === "password"
-          ? { password: form.password }
-          : { key_path: form.keyPath }),
-      })
+      const saved = await api.createServer(
+        buildServerBody({ host_key_fingerprint: fingerprint }),
+      )
 
       toast.success(t("addServer.savedSuccess", { name: saved.name }))
       onServerAdded?.(saved)

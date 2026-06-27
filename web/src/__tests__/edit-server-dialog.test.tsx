@@ -121,18 +121,12 @@ describe("EditServerDialog", () => {
     await user.clear(hostInput)
     await user.type(hostInput, "10.0.0.1")
 
-    // Mock fetch: PUT update + POST test
-    const updatedServer = { ...baseServer, host: "10.0.0.1" }
+    // Stateless connection test — no PUT before testing.
     const testResult = { fingerprint: "SHA256:newfingerprint" }
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
       const urlStr = typeof url === "string" ? url : url.toString()
-      const method = options && typeof options === "object" && "method" in options ? (options as { method: string }).method : "GET"
-
-      if (urlStr.includes("/api/servers/srv-1") && method === "PUT") {
-        return new Response(JSON.stringify(updatedServer), { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      if (urlStr.includes("/test")) {
+      if (urlStr === "/api/servers/test") {
         return new Response(JSON.stringify(testResult), { status: 200, headers: { "Content-Type": "application/json" } })
       }
       return new Response("Not Found", { status: 404 })
@@ -263,17 +257,13 @@ describe("EditServerDialog", () => {
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
       const urlStr = typeof url === "string" ? url : url.toString()
-      if (urlStr.includes("/test")) {
+      if (urlStr === "/api/servers/test") {
         return new Response(
           JSON.stringify({ error: { code: "auth_failed", message: "authentication failed" } }),
           { status: 422, headers: { "Content-Type": "application/json" } },
         )
       }
-      // PUT succeeds
-      return new Response(
-        JSON.stringify({ ...baseServer, host: "10.0.0.99" }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      )
+      return new Response("Not Found", { status: 404 })
     })
 
     await user.click(within(dialog).getByRole("button", { name: /test connection/i }))

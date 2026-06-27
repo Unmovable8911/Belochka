@@ -16,11 +16,13 @@ import (
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
-	staticFS              fs.FS
-	serverStore           ServerStore
-	sshTester             SSHTester
-	onServerChange        func()
-	terminalSessionOpener terminal.SessionOpener
+	staticFS        fs.FS
+	serverStore     ServerStore
+	sshTester       SSHTester
+	onServerChange  func()
+	terminalHandler *terminal.Handler
+	cronExecutor    CronExecutor
+	cronRunner      CronRunner
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -52,10 +54,24 @@ func WithOnServerChange(fn func()) RouterOption {
 	}
 }
 
-// WithTerminalSessionOpener enables the terminal WebSocket endpoint.
-func WithTerminalSessionOpener(opener terminal.SessionOpener) RouterOption {
+// WithTerminalHandler enables the terminal WebSocket endpoint.
+func WithTerminalHandler(h *terminal.Handler) RouterOption {
 	return func(c *routerConfig) {
-		c.terminalSessionOpener = opener
+		c.terminalHandler = h
+	}
+}
+
+// WithCronExecutor enables the cron list endpoint.
+func WithCronExecutor(executor CronExecutor) RouterOption {
+	return func(c *routerConfig) {
+		c.cronExecutor = executor
+	}
+}
+
+// WithCronRunner enables the "run cron now" endpoint.
+func WithCronRunner(runner CronRunner) RouterOption {
+	return func(c *routerConfig) {
+		c.cronRunner = runner
 	}
 }
 
@@ -80,14 +96,25 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 		r.Put("/api/servers/{id}", sh.update)
 		r.Delete("/api/servers/{id}", sh.delete)
 		if cfg.sshTester != nil {
-			r.Post("/api/servers/{id}/test", sh.testConnection)
+			r.Post("/api/servers/test", sh.testConnection)
 		}
 	}
 
 	// Terminal WebSocket endpoint
-	if cfg.terminalSessionOpener != nil {
-		th := terminal.NewHandler(cfg.terminalSessionOpener)
-		r.Get("/api/ws/terminal/{serverID}", th.ServeHTTP)
+	if cfg.terminalHandler != nil {
+		r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
+	}
+
+	// Cron endpoints
+	if cfg.cronExecutor != nil {
+		ch := &cronHandler{executor: cfg.cronExecutor, runner: cfg.cronRunner}
+		r.Get("/api/servers/{id}/crons", ch.listCrons)
+		r.Post("/api/servers/{id}/crons", ch.createCron)
+		r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)
+		r.Delete("/api/servers/{id}/crons/{index}", ch.deleteCron)
+		if cfg.cronRunner != nil {
+			r.Post("/api/servers/{id}/crons/{index}/run", ch.runCron)
+		}
 	}
 
 	// Mount embedded static file serving if available (production mode).

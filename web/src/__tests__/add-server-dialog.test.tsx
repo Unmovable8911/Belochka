@@ -248,18 +248,16 @@ describe("AddServerDialog", () => {
       const testResult = { fingerprint: "SHA256:abc123def456" }
       const savedServer = { ...createdServer, host_key_fingerprint: "SHA256:abc123def456" }
 
-      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
         const urlStr = typeof url === "string" ? url : url.toString()
-        const method = options && typeof options === "object" && "method" in options ? (options as { method: string }).method : "GET"
 
-        if (urlStr === "/api/servers" && method === "POST") {
-          return new Response(JSON.stringify(createdServer), { status: 201, headers: { "Content-Type": "application/json" } })
-        }
-        if (urlStr.includes("/test")) {
+        // Stateless connection test (no persistence).
+        if (urlStr === "/api/servers/test") {
           return new Response(JSON.stringify(testResult), { status: 200, headers: { "Content-Type": "application/json" } })
         }
-        if (urlStr.includes("/api/servers/srv-1") && method === "PUT") {
-          return new Response(JSON.stringify(savedServer), { status: 200, headers: { "Content-Type": "application/json" } })
+        // Single create on Save, carrying the trusted fingerprint.
+        if (urlStr === "/api/servers") {
+          return new Response(JSON.stringify(savedServer), { status: 201, headers: { "Content-Type": "application/json" } })
         }
         return new Response("Not Found", { status: 404 })
       })

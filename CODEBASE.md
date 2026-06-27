@@ -7,12 +7,15 @@
 
 ## Directory Structure
 ```
-cmd/server/          — CLI entry point: loads config, creates Application, runs until signal
+cmd/server/          — CLI entry point: flags (--config, --no-tray, --version), logging init, tray/CLI mode branch
+assets/              — Embedded assets: icon.png (256×256 tray icon), assets.go (go:embed)
 internal/app/        — Application lifecycle: wires all components, Start/Shutdown orchestration
 internal/api/        — HTTP router, REST endpoints (server CRUD), health check
 internal/hub/        — WebSocket hub: client registry, broadcast, connection upgrade
 internal/broadcast/  — Assembles server info + metrics into JSON wire format for WS clients
+internal/logging/    — Persistent log file writer; tee mode (CLI) mirrors output to stdout; retention-based cleanup
 internal/monitor/    — Metrics collection: SSH command builder, /proc parsers, delta computation
+internal/cron/       — Crontab parsing and line building utilities
 internal/ssh/        — SSH connection pool, reconnection with exponential backoff, keepalive
 internal/store/      — SQLite persistence with AES-encrypted password storage
 internal/model/      — Domain types: Server, Metrics, Snapshot, CPU/Memory/Disk/Network/Process
@@ -23,7 +26,7 @@ internal/static/     — SPA file server with index.html fallback
 internal/terminal/   — Web terminal: WebSocket-SSH bridge with PTY, resize, session lifecycle
 web/                 — React frontend (Vite build), embedded into Go binary via embed.go
 web/src/pages/       — Dashboard, ServerDetail, and Console (web terminal) pages
-web/src/components/  — UI components: ServerCard, AddServerDialog, WebSocketProvider, Layout, LanguageSwitcher, RingGauge, etc.
+web/src/components/  — UI components: ServerCard, AddServerDialog, AddCronDialog, WebSocketProvider, Layout, LanguageSwitcher, RingGauge, etc.
 web/src/hooks/       — useMonitorState: WebSocket message state management
 web/src/api/         — REST API client (client.ts)
 web/src/types/       — TypeScript type definitions for server/metrics wire format
@@ -34,22 +37,40 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 ## Modules
 
 ### cmd/server
-- **Purpose**: CLI entry point. Parses flags, loads config, creates and starts the Application, waits for SIGTERM/SIGINT, then calls graceful shutdown.
-- **Key Files**: `cmd/server/main.go`
-- **Dependencies**: config, app
+- **Purpose**: CLI entry point. Parses flags (`--config`, `--no-tray`, `--version`), initialises `internal/logging`, creates and starts the Application, then branches: tray mode (`hasDesktop() && !--no-tray`) gives the main goroutine to `systray.Run`; CLI mode waits for SIGTERM/SIGINT and calls graceful shutdown.
+- **Key Files**: `cmd/server/main.go`, `cmd/server/tray.go` (systray entry, openBrowser), `cmd/server/desktop.go` (hasDesktop — Linux/macOS), `cmd/server/desktop_windows.go` (hasDesktop — Windows, always true)
+- **Dependencies**: config, app, logging, assets, fyne.io/systray
 - **Exposes**: `main()` — the compiled binary
+
+### assets
+- **Purpose**: Embeds `icon.png` (256×256 tray icon) via `//go:embed` for use by the tray entry point.
+- **Key Files**: `assets/assets.go`, `assets/icon.png`
+- **Dependencies**: none
+- **Exposes**: `Icon []byte`
+
+### internal/logging
+- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). On each `Write`, checks if the first log line is older than the retention window; if so, rewrites the file dropping expired lines. Default retention: 3 days; overridden by `BELOCHKA_LOG_RETENTION_DAYS` env var.
+- **Key Files**: `internal/logging/logger.go`
+- **Dependencies**: none
+- **Exposes**: `Logger` struct, `New(path string, tee bool) (*Logger, error)`
 
 ### internal/app
 - **Purpose**: Top-level application container. Wires hub, store, SSH pool, collector manager, terminal handler, and HTTP server. Manages lifecycle (Start/Shutdown) and periodic metric broadcast loop (2s interval).
 - **Key Files**: `internal/app/app.go`
-- **Dependencies**: api, broadcast, config, hub, model, monitor, shutdown, ssh, store, terminal, web
+- **Dependencies**: api, broadcast, config, hub, model, monitor, shutdown, ssh, store, terminal, web (wires `pool` as `CronExecutor` and `CronRunner`)
 - **Exposes**: `Application` struct with `New()`, `Start()`, `Shutdown()`, `Addr()`
 
 ### internal/api
-- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, health check, WebSocket upgrade, terminal WebSocket endpoint, and static file serving.
-- **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`
-- **Dependencies**: hub, model, ssh, static, terminal
-- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalSessionOpener`); `ServerStore` and `SSHTester` interfaces
+- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, a stateless connection-test endpoint, health check, WebSocket upgrade, terminal WebSocket endpoint, cron CRUD endpoints, and static file serving.
+- **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`, `internal/api/cron_handler.go`
+- **Dependencies**: hub, model, ssh, static, terminal, cron
+- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalHandler`, `WithCronExecutor`, `WithCronRunner`); `ServerStore`, `SSHTester`, `CronExecutor`, `CronRunner` interfaces. Routes: `GET/POST /api/servers/{id}/crons`, `PUT/DELETE /api/servers/{id}/crons/{index}`, `POST /api/servers/{id}/crons/{index}/run`.
+
+### internal/cron
+- **Purpose**: Crontab parsing and line building. Parses crontab output into enabled/disabled entries and passthrough lines (comments, env vars). Builds crontab lines with support for `#[disabled] ` prefix convention. Provides `ReplaceCronEntry` for in-place replacement or deletion of an entry by zero-based index.
+- **Key Files**: `internal/cron/cron.go`
+- **Dependencies**: none
+- **Exposes**: `CronEntry` (schedule fields + command + enabled flag), `CronResult` (entries + passthroughs), `ParseCrontab()`, `BuildLine()`, `ReplaceCronEntry()`
 
 ### internal/hub
 - **Purpose**: WebSocket client management. Handles upgrade, registration, broadcast fan-out, connection limits (max 10), and graceful close with 1001 Going Away frame.
@@ -73,7 +94,7 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Purpose**: Persistent SSH connection pool with automatic reconnection (exponential backoff 1s→30s), keepalive pings (30s interval, 3-failure threshold), and classified error types (auth, host key, network, passphrase).
 - **Key Files**: `internal/ssh/pool.go` (Pool, managed connections), `internal/ssh/reconnect.go` (Reconnector, Keepalive), `internal/ssh/ssh.go` (TestConnection, auth builder, error classification)
 - **Dependencies**: clock, model, golang.org/x/crypto/ssh
-- **Exposes**: `Pool` (Add/Remove/Execute/OpenSession/Status/TriggerReconnect/CloseAll), `TestConnection()`, `TestResult`, `ConnectionError`, `ErrorKind`, `ConnState`, `ConnStatus`, `ServerProvider` interface
+- **Exposes**: `Pool` (Add/Remove/Execute/OpenSession/RunCommand/Status/TriggerReconnect/CloseAll), `TestConnection()`, `TestResult`, `ConnectionError`, `ErrorKind`, `ConnState`, `ConnStatus`, `ServerProvider` interface. `RunCommand(ctx, serverID, cmd)` runs a single command and returns stdout+stderr combined, exit code, and error (connection failures distinguished from non-zero exit codes via `*gossh.ExitError`).
 
 ### internal/store
 - **Purpose**: SQLite-based server persistence. Passwords are AES-GCM encrypted at rest. Supports auto-generated or config-provided encryption key. WAL mode enabled.
@@ -85,7 +106,7 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Purpose**: Shared domain types used across all backend modules. Raw metrics (jiffy counters, byte counters) and computed snapshots (percentages, rates).
 - **Key Files**: `internal/model/model.go`
 - **Dependencies**: none
-- **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot`, `CPUUsage`, `NetworkRate`
+- **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot`, `CPUUsage`, `NetworkRate`; `ErrServerNotFound` sentinel error (wrapped by `store`, matched via `errors.Is` in `api`)
 
 ### internal/config
 - **Purpose**: Loads YAML config file (default `belochka.yaml`), falls back to built-in defaults (port 53136, data dir `./data`). `BELOCHKA_ENCRYPTION_KEY` env var overrides file value.
@@ -118,8 +139,8 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `NewHandler()` function
 
 ### web (frontend)
-- **Purpose**: React SPA dashboard. Three routes: `/` (Dashboard — server card grid with connection status and summary metrics), `/server/:id` (ServerDetail — detailed CPU, memory, disk, network, process views), and `/server/:id/console` (Console — full-page web terminal via xterm.js + WebSocket). Dashboard and detail routes use the shared Layout/WebSocketProvider; console route is standalone. Internationalized with react-i18next supporting English, Chinese (Simplified), French, and Russian.
-- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx`, `web/src/pages/Console.tsx` (web terminal page), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/LanguageSwitcher.tsx` (language switcher used in Dashboard and ServerDetail), `web/src/i18n/index.ts` (i18n config), `web/src/i18n/en.json` (English translations, reference for all languages), `web/src/hooks/useMonitorState.ts`, `web/src/api/client.ts`, `web/embed.go` (Go embed)
+- **Purpose**: React SPA dashboard. Three routes: `/` (Dashboard — server card grid with connection status and summary metrics), `/server/:id` (ServerDetail — detailed CPU, memory, disk, network, process views, and Cron Jobs tab with full CRUD + run-now), and `/server/:id/console` (Console — full-page web terminal via xterm.js + WebSocket). Dashboard and detail routes use the shared Layout/WebSocketProvider; console route is standalone. Internationalized with react-i18next supporting English, Chinese (Simplified), French, and Russian.
+- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx` (tabbed: Overview / Cron Jobs), `web/src/pages/Console.tsx` (web terminal page), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/LanguageSwitcher.tsx`, `web/src/components/AddCronDialog.tsx` (add/edit cron dialog, reused via `editEntry`/`editIndex` props), `web/src/i18n/index.ts` (i18n config), `web/src/i18n/en.json` (English translations, reference for all languages), `web/src/hooks/useMonitorState.ts`, `web/src/api/client.ts`, `web/embed.go` (Go embed)
 - **Dependencies**: React 19, react-router-dom, Radix UI, Tailwind CSS, Lucide icons, sonner (toasts), i18next, react-i18next, i18next-browser-languagedetector, @xterm/xterm, @xterm/addon-fit
 - **Exposes**: Embedded filesystem via `web.DistFS()` consumed by Go backend
 
@@ -134,6 +155,8 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 8. **Frontend rendering**: `WebSocketProvider` receives messages → `useMonitorState` hook updates React state → Dashboard/ServerDetail re-render with fresh metrics. All UI strings resolve through `react-i18next` `t()` calls against the active language's translation file.
 9. **Server CRUD**: REST API (`POST/GET/PUT/DELETE /api/servers`) persists to SQLite, then triggers `onServerChange` callback which re-syncs SSH pool and broadcasts updated state.
 10. **Terminal session**: Browser opens WebSocket to `/api/ws/terminal/{serverID}` → terminal Handler calls `SessionOpener.OpenSession()` to get an SSH session from Pool → requests PTY (xterm-256color) → starts shell → bridges stdin/stdout bidirectionally as binary WebSocket frames. Resize control messages (JSON text frames) trigger `WindowChange`. On SSH EOF or WebSocket close, session is cleaned up.
+11. **Connection test**: `POST /api/servers/test` accepts a full server config in the request body and runs `ssh.TestConnection` without persisting anything (no DB writes, no pool sync). When the password is omitted but an `id` is supplied, the stored secret is read (read-only) and reused. The Add/Edit dialogs test against in-memory form data and persist only on Save, so cancelling never leaves orphaned server records.
+12. **Cron management**: `GET /api/servers/{id}/crons` runs `crontab -l` via SSH → `cron.ParseCrontab()` → JSON. `POST` appends a new line to the existing crontab and writes back via `echo <base64> | base64 -d | crontab -`. `PUT /{index}` uses `cron.ReplaceCronEntry()` to edit in place; `DELETE /{index}` removes the entry. `POST /{index}/run` executes the cron command via `pool.RunCommand()` and returns `{exitCode, output}`; non-zero exit codes are returned as data, not HTTP errors.
 
 ## External Dependencies
 - **i18next / react-i18next**: Frontend internationalization framework with React bindings; language auto-detected from browser, persisted in localStorage, switchable via UI

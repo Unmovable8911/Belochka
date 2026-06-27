@@ -36,7 +36,7 @@ func (m *mockStore) Create(_ context.Context, srv model.Server) (model.Server, e
 func (m *mockStore) GetByID(_ context.Context, id string) (model.Server, error) {
 	srv, ok := m.servers[id]
 	if !ok {
-		return model.Server{}, fmt.Errorf("server not found: %s", id)
+		return model.Server{}, fmt.Errorf("%w: %s", model.ErrServerNotFound, id)
 	}
 	return srv, nil
 }
@@ -52,7 +52,7 @@ func (m *mockStore) List(_ context.Context) ([]model.Server, error) {
 func (m *mockStore) Update(_ context.Context, srv model.Server) (model.Server, error) {
 	existing, ok := m.servers[srv.ID]
 	if !ok {
-		return model.Server{}, fmt.Errorf("server not found: %s", srv.ID)
+		return model.Server{}, fmt.Errorf("%w: %s", model.ErrServerNotFound, srv.ID)
 	}
 	srv.CreatedAt = existing.CreatedAt
 	if srv.Password == "" {
@@ -64,7 +64,7 @@ func (m *mockStore) Update(_ context.Context, srv model.Server) (model.Server, e
 
 func (m *mockStore) Delete(_ context.Context, id string) error {
 	if _, ok := m.servers[id]; !ok {
-		return fmt.Errorf("server not found: %s", id)
+		return fmt.Errorf("%w: %s", model.ErrServerNotFound, id)
 	}
 	delete(m.servers, id)
 	return nil
@@ -74,9 +74,11 @@ func (m *mockStore) Delete(_ context.Context, id string) error {
 type mockSSHTester struct {
 	result ssh.TestResult
 	err    error
+	gotSrv model.Server // captures the last server passed to TestConnection
 }
 
 func (m *mockSSHTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
+	m.gotSrv = srv
 	return m.result, m.err
 }
 
@@ -447,36 +449,30 @@ func TestCreateServer_ReturnsCreatedWithoutPassword(t *testing.T) {
 	}
 }
 
-func createTestServer(t *testing.T, router http.Handler) string {
-	t.Helper()
-	body, _ := json.Marshal(map[string]interface{}{
-		"name": "web-1", "host": "10.0.0.1", "port": 22,
-		"username": "deploy", "password": "secret",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+
+// postTestConnection POSTs a server config body to the stateless test endpoint.
+func postTestConnection(router http.Handler, body map[string]interface{}) *httptest.ResponseRecorder {
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/test", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("setup: expected 201, got %d", rec.Code)
+	return rec
+}
+
+// validTestBody returns a complete, valid server config for the test endpoint.
+func validTestBody() map[string]interface{} {
+	return map[string]interface{}{
+		"name": "web-1", "host": "10.0.0.1", "port": 22,
+		"username": "deploy", "auth_type": "password", "password": "secret",
 	}
-	var created map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&created)
-	return created["id"].(string)
 }
 
 func TestTestServer_Success_ReturnsFingerprint(t *testing.T) {
-	store := newMockStore()
-	tester := &mockSSHTester{
-		result: ssh.TestResult{Fingerprint: "SHA256:abc123"},
-	}
-	router := setupRouterWithSSH(store, tester)
+	tester := &mockSSHTester{result: ssh.TestResult{Fingerprint: "SHA256:abc123"}}
+	router := setupRouterWithSSH(newMockStore(), tester)
 
-	id := createTestServer(t, router)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	rec := postTestConnection(router, validTestBody())
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -490,35 +486,58 @@ func TestTestServer_Success_ReturnsFingerprint(t *testing.T) {
 	}
 }
 
-func TestTestServer_NotFound(t *testing.T) {
-	store := newMockStore()
+func TestTestServer_ValidationError_Returns400(t *testing.T) {
 	tester := &mockSSHTester{}
+	router := setupRouterWithSSH(newMockStore(), tester)
+
+	rec := postTestConnection(router, map[string]interface{}{"port": 22})
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["code"] != "validation_failed" {
+		t.Fatalf("expected validation_failed, got %v", errObj["code"])
+	}
+}
+
+// When the password is omitted for an existing server (id present), the
+// endpoint reuses the stored secret for the test without persisting anything.
+func TestTestServer_ReusesStoredPasswordWhenOmitted(t *testing.T) {
+	store := newMockStore()
+	store.servers["srv-1"] = model.Server{
+		ID: "srv-1", Name: "web-1", Host: "10.0.0.1", Port: 22,
+		Username: "deploy", AuthType: model.AuthTypePassword, Password: "stored-secret",
+	}
+	tester := &mockSSHTester{result: ssh.TestResult{Fingerprint: "SHA256:fp"}}
 	router := setupRouterWithSSH(store, tester)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/nonexistent/test", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	// Changed host, password omitted.
+	rec := postTestConnection(router, map[string]interface{}{
+		"id": "srv-1", "name": "web-1", "host": "10.0.0.9", "port": 22,
+		"username": "deploy", "auth_type": "password",
+	})
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if tester.gotSrv.Password != "stored-secret" {
+		t.Fatalf("expected stored password to be reused, got %q", tester.gotSrv.Password)
 	}
 }
 
 func TestTestServer_AuthFailure_Returns422(t *testing.T) {
-	store := newMockStore()
 	tester := &mockSSHTester{
 		err: &ssh.ConnectionError{
 			Kind:    ssh.ErrAuth,
 			Message: "authentication failed",
 		},
 	}
-	router := setupRouterWithSSH(store, tester)
+	router := setupRouterWithSSH(newMockStore(), tester)
 
-	id := createTestServer(t, router)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	rec := postTestConnection(router, validTestBody())
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
@@ -534,20 +553,15 @@ func TestTestServer_AuthFailure_Returns422(t *testing.T) {
 }
 
 func TestTestServer_HostKeyMismatch_Returns422(t *testing.T) {
-	store := newMockStore()
 	tester := &mockSSHTester{
 		err: &ssh.ConnectionError{
 			Kind:    ssh.ErrHostKey,
 			Message: "host key mismatch",
 		},
 	}
-	router := setupRouterWithSSH(store, tester)
+	router := setupRouterWithSSH(newMockStore(), tester)
 
-	id := createTestServer(t, router)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	rec := postTestConnection(router, validTestBody())
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
@@ -563,20 +577,15 @@ func TestTestServer_HostKeyMismatch_Returns422(t *testing.T) {
 }
 
 func TestTestServer_NetworkError_Returns422(t *testing.T) {
-	store := newMockStore()
 	tester := &mockSSHTester{
 		err: &ssh.ConnectionError{
 			Kind:    ssh.ErrNetwork,
 			Message: "connection refused",
 		},
 	}
-	router := setupRouterWithSSH(store, tester)
+	router := setupRouterWithSSH(newMockStore(), tester)
 
-	id := createTestServer(t, router)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	rec := postTestConnection(router, validTestBody())
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
@@ -592,20 +601,15 @@ func TestTestServer_NetworkError_Returns422(t *testing.T) {
 }
 
 func TestTestServer_PassphraseKey_Returns422(t *testing.T) {
-	store := newMockStore()
 	tester := &mockSSHTester{
 		err: &ssh.ConnectionError{
 			Kind:    ssh.ErrPassphrase,
 			Message: "key file is passphrase-protected; passphrase-protected keys are not supported",
 		},
 	}
-	router := setupRouterWithSSH(store, tester)
+	router := setupRouterWithSSH(newMockStore(), tester)
 
-	id := createTestServer(t, router)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+id+"/test", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	rec := postTestConnection(router, validTestBody())
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())

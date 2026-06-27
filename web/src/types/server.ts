@@ -26,3 +26,24 @@ export interface ServerFormData {
 export interface TestResult {
   fingerprint: string
 }
+
+export interface CronEntry {
+  minute: string
+  hour: string
+  dayOfMonth: string
+  month: string
+  dayOfWeek: string
+  command: string
+  enabled: boolean
+  raw: string
+}
+
+export interface CronResult {
+  entries: CronEntry[]
+  passthroughs: string[]
+}
+
+export interface CronRunResult {
+  exitCode: number
+  output: string
+}
