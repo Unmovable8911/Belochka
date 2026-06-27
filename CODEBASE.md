@@ -7,11 +7,13 @@
 
 ## Directory Structure
 ```
-cmd/server/          — CLI entry point: loads config, creates Application, runs until signal
+cmd/server/          — CLI entry point: flags (--config, --no-tray, --version), logging init, tray/CLI mode branch
+assets/              — Embedded assets: icon.png (256×256 tray icon), assets.go (go:embed)
 internal/app/        — Application lifecycle: wires all components, Start/Shutdown orchestration
 internal/api/        — HTTP router, REST endpoints (server CRUD), health check
 internal/hub/        — WebSocket hub: client registry, broadcast, connection upgrade
 internal/broadcast/  — Assembles server info + metrics into JSON wire format for WS clients
+internal/logging/    — Persistent log file writer; tee mode (CLI) mirrors output to stdout; retention-based cleanup
 internal/monitor/    — Metrics collection: SSH command builder, /proc parsers, delta computation
 internal/cron/       — Crontab parsing and line building utilities
 internal/ssh/        — SSH connection pool, reconnection with exponential backoff, keepalive
@@ -35,10 +37,22 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 ## Modules
 
 ### cmd/server
-- **Purpose**: CLI entry point. Parses flags, loads config, creates and starts the Application, waits for SIGTERM/SIGINT, then calls graceful shutdown.
-- **Key Files**: `cmd/server/main.go`
-- **Dependencies**: config, app
+- **Purpose**: CLI entry point. Parses flags (`--config`, `--no-tray`, `--version`), initialises `internal/logging`, creates and starts the Application, then branches: tray mode (`hasDesktop() && !--no-tray`) gives the main goroutine to `systray.Run`; CLI mode waits for SIGTERM/SIGINT and calls graceful shutdown.
+- **Key Files**: `cmd/server/main.go`, `cmd/server/tray.go` (systray entry, openBrowser), `cmd/server/desktop.go` (hasDesktop — Linux/macOS), `cmd/server/desktop_windows.go` (hasDesktop — Windows, always true)
+- **Dependencies**: config, app, logging, assets, fyne.io/systray
 - **Exposes**: `main()` — the compiled binary
+
+### assets
+- **Purpose**: Embeds `icon.png` (256×256 tray icon) via `//go:embed` for use by the tray entry point.
+- **Key Files**: `assets/assets.go`, `assets/icon.png`
+- **Dependencies**: none
+- **Exposes**: `Icon []byte`
+
+### internal/logging
+- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). On each `Write`, checks if the first log line is older than the retention window; if so, rewrites the file dropping expired lines. Default retention: 3 days; overridden by `BELOCHKA_LOG_RETENTION_DAYS` env var.
+- **Key Files**: `internal/logging/logger.go`
+- **Dependencies**: none
+- **Exposes**: `Logger` struct, `New(path string, tee bool) (*Logger, error)`
 
 ### internal/app
 - **Purpose**: Top-level application container. Wires hub, store, SSH pool, collector manager, terminal handler, and HTTP server. Manages lifecycle (Start/Shutdown) and periodic metric broadcast loop (2s interval).

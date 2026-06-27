@@ -16,10 +16,12 @@ Belochka (белочка, « écureuil ») est un outil de surveillance serveur 
 - **Tableau de bord en temps réel** — cartes serveur avec métriques CPU, mémoire, disque et réseau en direct, colorées selon l'utilisation
 - **Vue détaillée du serveur** — jauges CPU par cœur, graphiques en anneau mémoire/swap, détail des partitions disque, débit par interface réseau, tableau de processus triable
 - **Terminal web** — console SSH interactive complète dans le navigateur via xterm.js
+- **Icône dans la barre système** — sur les machines de bureau (Windows, macOS, Linux avec GNOME/KDE/XFCE), affiche une icône avec les entrées **Ouvrir le tableau de bord** et **Quitter** ; bascule automatiquement en mode CLI sur les serveurs sans interface graphique
 - **Binaire unique** — backend Go avec frontend React embarqué ; un seul fichier à déployer, rien d'autre à installer
 - **Connexions SSH persistantes** — reconnexion automatique avec backoff exponentiel et keepalive
 - **Stockage chiffré des identifiants** — mots de passe serveur chiffrés au repos avec AES-256-GCM
 - **Gestion des tâches cron** — consulter, ajouter, modifier, activer/désactiver, supprimer et exécuter immédiatement des tâches cron depuis la vue détaillée du serveur
+- **Fichier journal persistant** — toutes les sorties écrites dans `./log` avec nettoyage automatique basé sur la rétention (défaut : 3 jours)
 - **Interface multilingue** — anglais, chinois, français et russe
 
 ## Démarrage rapide
@@ -68,11 +70,20 @@ data_dir: ./data   # Emplacement de la base de données et de la clé de chiffre
 encryption_key: "" # Clé AES-256 ; laisser vide pour génération automatique
 ```
 
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `--config <chemin>` | Chemin vers le fichier de configuration YAML |
+| `--no-tray` | Désactive l'icône dans la barre système ; lance en tant que processus CLI |
+| `--version` | Affiche la version et quitte |
+
 ### Variables d'environnement
 
 | Variable | Description |
 |---|---|
 | `BELOCHKA_ENCRYPTION_KEY` | Remplace la valeur `encryption_key` du fichier de configuration |
+| `BELOCHKA_LOG_RETENTION_DAYS` | Nombre de jours de conservation des entrées dans `./log` (défaut : `3`) |
 
 ### Clé de chiffrement
 

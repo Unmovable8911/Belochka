@@ -16,10 +16,12 @@ Belochka (белочка, "squirrel") is a single-binary server monitoring tool 
 - **Real-time dashboard** — server cards with live CPU, memory, disk, and network metrics, color-coded by usage
 - **Detailed server view** — per-core CPU gauges, memory/swap ring charts, disk partition breakdown, network interface throughput, sortable process table
 - **Web terminal** — full interactive SSH console in the browser via xterm.js
+- **System tray icon** — on desktop machines (Windows, macOS, Linux with GNOME/KDE/XFCE), shows a tray icon with **Open Dashboard** and **Quit** menu items; automatically falls back to CLI mode on headless servers
 - **Single binary** — Go backend with embedded React frontend; one file to deploy, nothing else to install
 - **Persistent SSH connections** — automatic reconnection with exponential backoff and keepalive
 - **Encrypted credential storage** — server passwords encrypted at rest with AES-256-GCM
 - **Cron job management** — view, add, edit, enable/disable, delete, and run cron jobs directly from the server detail page
+- **Persistent log file** — all output written to `./log` with automatic retention-based cleanup (default: 3 days)
 - **Multi-language UI** — English, Chinese, French, and Russian
 
 ## Quick Start
@@ -68,11 +70,20 @@ data_dir: ./data   # Database and encryption key location (default: ./data)
 encryption_key: "" # AES-256 key; leave empty to auto-generate
 ```
 
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--config <path>` | Path to the YAML configuration file |
+| `--no-tray` | Disable the system tray icon; run as a plain CLI process |
+| `--version` | Print version and exit |
+
 ### Environment Variables
 
 | Variable | Description |
 |---|---|
 | `BELOCHKA_ENCRYPTION_KEY` | Overrides `encryption_key` from the config file |
+| `BELOCHKA_LOG_RETENTION_DAYS` | Number of days to keep log entries in `./log` (default: `3`) |
 
 ### Encryption Key
 
