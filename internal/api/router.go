@@ -16,11 +16,12 @@ import (
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
-	staticFS              fs.FS
-	serverStore           ServerStore
-	sshTester             SSHTester
-	onServerChange        func()
-	terminalHandler       *terminal.Handler
+	staticFS        fs.FS
+	serverStore     ServerStore
+	sshTester       SSHTester
+	onServerChange  func()
+	terminalHandler *terminal.Handler
+	cronExecutor    CronExecutor
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -59,6 +60,13 @@ func WithTerminalHandler(h *terminal.Handler) RouterOption {
 	}
 }
 
+// WithCronExecutor enables the cron list endpoint.
+func WithCronExecutor(executor CronExecutor) RouterOption {
+	return func(c *routerConfig) {
+		c.cronExecutor = executor
+	}
+}
+
 // NewRouter creates and returns the application HTTP router with all routes mounted.
 func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	var cfg routerConfig
@@ -87,6 +95,12 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	// Terminal WebSocket endpoint
 	if cfg.terminalHandler != nil {
 		r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
+	}
+
+	// Cron list endpoint
+	if cfg.cronExecutor != nil {
+		ch := &cronHandler{executor: cfg.cronExecutor}
+		r.Get("/api/servers/{id}/crons", ch.listCrons)
 	}
 
 	// Mount embedded static file serving if available (production mode).

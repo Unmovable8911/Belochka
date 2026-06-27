@@ -94,5 +94,18 @@
   },
   "language": {
     "label": "Langue"
+  },
+  "cronJobs": {
+    "tabOverview": "Vue d'ensemble",
+    "tabCronJobs": "Tâches planifiées",
+    "colEnabled": "Activé",
+    "colSchedule": "Planification",
+    "colCommand": "Commande",
+    "colActions": "Actions",
+    "loading": "Chargement des tâches planifiées...",
+    "empty": "Aucune tâche planifiée configurée.",
+    "error": "Échec du chargement des tâches planifiées.",
+    "statusEnabled": "Activé",
+    "statusDisabled": "Désactivé"
   }
 }

@@ -94,5 +94,18 @@
   },
   "language": {
     "label": "Language"
+  },
+  "cronJobs": {
+    "tabOverview": "Overview",
+    "tabCronJobs": "Cron Jobs",
+    "colEnabled": "Enabled",
+    "colSchedule": "Schedule",
+    "colCommand": "Command",
+    "colActions": "Actions",
+    "loading": "Loading cron jobs...",
+    "empty": "No cron jobs configured.",
+    "error": "Failed to load cron jobs.",
+    "statusEnabled": "Enabled",
+    "statusDisabled": "Disabled"
   }
 }

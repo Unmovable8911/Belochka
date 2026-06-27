@@ -94,5 +94,18 @@
   },
   "language": {
     "label": "Язык"
+  },
+  "cronJobs": {
+    "tabOverview": "Обзор",
+    "tabCronJobs": "Задания cron",
+    "colEnabled": "Включено",
+    "colSchedule": "Расписание",
+    "colCommand": "Команда",
+    "colActions": "Действия",
+    "loading": "Загрузка заданий cron...",
+    "empty": "Задания cron не настроены.",
+    "error": "Не удалось загрузить задания cron.",
+    "statusEnabled": "Включено",
+    "statusDisabled": "Отключено"
   }
 }

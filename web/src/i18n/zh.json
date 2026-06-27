@@ -94,5 +94,18 @@
   },
   "language": {
     "label": "语言"
+  },
+  "cronJobs": {
+    "tabOverview": "概览",
+    "tabCronJobs": "定时任务",
+    "colEnabled": "已启用",
+    "colSchedule": "计划",
+    "colCommand": "命令",
+    "colActions": "操作",
+    "loading": "加载定时任务中...",
+    "empty": "未配置定时任务。",
+    "error": "加载定时任务失败。",
+    "statusEnabled": "已启用",
+    "statusDisabled": "已禁用"
   }
 }

@@ -1,4 +1,4 @@
-import type { Server, TestResult } from "@/types/server"
+import type { Server, TestResult, CronResult } from "@/types/server"
 
 export class ApiError extends Error {
   code: string
@@ -62,4 +62,8 @@ export async function testConnection(data: Record<string, unknown>): Promise<Tes
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   })
+}
+
+export async function getCrons(serverId: string): Promise<CronResult> {
+  return request<CronResult>(`/api/servers/${serverId}/crons`)
 }
