@@ -155,3 +155,25 @@ func TestLogger_RetentionEnvVar(t *testing.T) {
 		t.Errorf("expected new line present, got:\n%s", got)
 	}
 }
+
+// Cycle 6: an unparseable first line must not disable retention cleanup.
+func TestLogger_UnparseableFirstLineStillPurges(t *testing.T) {
+	path := t.TempDir() + "/test.log"
+	old := slogLine(time.Now().Add(-4*24*time.Hour), "old-message")
+	writeRaw(t, path, []string{"garbage without a timestamp\n", old})
+
+	// open performs the initial purge.
+	l, err := open(path, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	got := readAll(t, path)
+	if strings.Contains(got, "old-message") {
+		t.Errorf("expected old line purged despite unparseable first line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "garbage without a timestamp") {
+		t.Errorf("expected unparseable line to be kept, got:\n%s", got)
+	}
+}

@@ -21,7 +21,7 @@ Belochka (белочка, « écureuil ») est un outil de surveillance serveur 
 - **Connexions SSH persistantes** — reconnexion automatique avec backoff exponentiel et keepalive
 - **Stockage chiffré des identifiants** — mots de passe serveur chiffrés au repos avec AES-256-GCM
 - **Gestion des tâches cron** — consulter, ajouter, modifier, activer/désactiver, supprimer et exécuter immédiatement des tâches cron depuis la vue détaillée du serveur
-- **Fichier journal persistant** — toutes les sorties écrites dans `./log` avec nettoyage automatique basé sur la rétention (défaut : 3 jours)
+- **Fichier journal persistant** — toutes les sorties écrites dans un fichier journal de votre répertoire de cache utilisateur (par ex. `~/.cache/belochka/belochka.log`) avec nettoyage automatique basé sur la rétention (défaut : 3 jours)
 - **Interface multilingue** — anglais, chinois, français et russe
 
 ## Démarrage rapide
@@ -33,8 +33,8 @@ Téléchargez le dernier binaire depuis les [Releases](https://github.com/Unmova
 chmod +x belochka-linux-amd64
 ./belochka-linux-amd64
 
-# Windows (amd64)
-belochka-windows-amd64.exe
+# Windows (64 bits)
+belochka-windows-x86-64.exe
 ```
 
 Ouvrez `http://localhost:53136` dans votre navigateur. Ajoutez des serveurs via l'interface.
@@ -57,7 +57,8 @@ make release
 # Produit :
 #   bin/belochka-linux-amd64
 #   bin/belochka-linux-arm64
-#   bin/belochka-windows-amd64.exe
+#   bin/belochka-windows-x86-64.exe
+#   bin/belochka-windows-x86.exe
 ```
 
 ## Configuration
@@ -83,7 +84,7 @@ encryption_key: "" # Clé AES-256 ; laisser vide pour génération automatique
 | Variable | Description |
 |---|---|
 | `BELOCHKA_ENCRYPTION_KEY` | Remplace la valeur `encryption_key` du fichier de configuration |
-| `BELOCHKA_LOG_RETENTION_DAYS` | Nombre de jours de conservation des entrées dans `./log` (défaut : `3`) |
+| `BELOCHKA_LOG_RETENTION_DAYS` | Nombre de jours de conservation des entrées dans le fichier journal (défaut : `3`) |
 
 ### Clé de chiffrement
 

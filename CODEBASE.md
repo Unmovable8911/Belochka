@@ -8,7 +8,7 @@
 ## Directory Structure
 ```
 cmd/server/          — CLI entry point: flags (--config, --no-tray, --version), logging init, tray/CLI mode branch
-assets/              — Embedded assets: icon.png (256×256 tray icon), assets.go (go:embed)
+assets/              — Embedded tray icon: icon.png (128×128, Linux/macOS) + icon.ico (Windows), selected by build tag (icon_other.go / icon_windows.go)
 internal/app/        — Application lifecycle: wires all components, Start/Shutdown orchestration
 internal/api/        — HTTP router, REST endpoints (server CRUD), health check
 internal/hub/        — WebSocket hub: client registry, broadcast, connection upgrade
@@ -38,18 +38,18 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 
 ### cmd/server
 - **Purpose**: CLI entry point. Parses flags (`--config`, `--no-tray`, `--version`), initialises `internal/logging`, creates and starts the Application, then branches: tray mode (`hasDesktop() && !--no-tray`) gives the main goroutine to `systray.Run`; CLI mode waits for SIGTERM/SIGINT and calls graceful shutdown.
-- **Key Files**: `cmd/server/main.go`, `cmd/server/tray.go` (systray entry, openBrowser), `cmd/server/desktop.go` (hasDesktop — Linux/macOS), `cmd/server/desktop_windows.go` (hasDesktop — Windows, always true)
+- **Key Files**: `cmd/server/main.go` (also `logFilePath()` → `os.UserCacheDir()/belochka/belochka.log`), `cmd/server/tray.go` (systray entry, openBrowser — reaps child via `cmd.Wait()`), `cmd/server/desktop.go` (hasDesktop — Linux/BSD, checks DISPLAY/WAYLAND_DISPLAY), `cmd/server/desktop_darwin.go` (hasDesktop — macOS, always true), `cmd/server/desktop_windows.go` (hasDesktop — Windows, always true)
 - **Dependencies**: config, app, logging, assets, fyne.io/systray
 - **Exposes**: `main()` — the compiled binary
 
 ### assets
-- **Purpose**: Embeds `icon.png` (256×256 tray icon) via `//go:embed` for use by the tray entry point.
-- **Key Files**: `assets/assets.go`, `assets/icon.png`
+- **Purpose**: Embeds the system tray icon via `//go:embed`, selected per platform by build tag — PNG on Linux/macOS, ICO on Windows (systray requires ICO on Windows).
+- **Key Files**: `assets/icon_other.go` (`!windows`, embeds icon.png), `assets/icon_windows.go` (`windows`, embeds icon.ico), `assets/icon.png` (128×128), `assets/icon.ico`
 - **Dependencies**: none
 - **Exposes**: `Icon []byte`
 
 ### internal/logging
-- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). On each `Write`, checks if the first log line is older than the retention window; if so, rewrites the file dropping expired lines. Default retention: 3 days; overridden by `BELOCHKA_LOG_RETENTION_DAYS` env var.
+- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). Retention cleanup runs once at construction and at most hourly on `Write` (off the hot path): if the first log line predates the retention window, the file is rewritten dropping expired lines (uses `bufio.Reader`, so no line-length cap; an unparseable first line falls through to a full scan instead of disabling cleanup). Default retention: 3 days; overridden by `BELOCHKA_LOG_RETENTION_DAYS` env var.
 - **Key Files**: `internal/logging/logger.go`
 - **Dependencies**: none
 - **Exposes**: `Logger` struct, `New(path string, tee bool) (*Logger, error)`

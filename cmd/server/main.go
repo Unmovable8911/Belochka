@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"belochka/internal/app"
@@ -30,7 +31,7 @@ func main() {
 
 	trayMode := hasDesktop() && !*noTray
 
-	logWriter, err := logging.New("./log", !trayMode)
+	logWriter, err := logging.New(logFilePath(), !trayMode)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open log file: %v\n", err)
 		os.Exit(1)
@@ -77,4 +78,20 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+// logFilePath returns an absolute, writable path for the log file. In tray mode
+// the process is launched from a desktop shell with an unpredictable (often
+// unwritable) working directory, so a relative path is not safe. Falls back to
+// the working directory if the user cache directory cannot be resolved.
+func logFilePath() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "belochka.log"
+	}
+	dir := filepath.Join(cacheDir, "belochka")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "belochka.log"
+	}
+	return filepath.Join(dir, "belochka.log")
 }

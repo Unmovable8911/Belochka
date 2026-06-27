@@ -21,7 +21,7 @@ Belochka (белочка, "squirrel") is a single-binary server monitoring tool 
 - **Persistent SSH connections** — automatic reconnection with exponential backoff and keepalive
 - **Encrypted credential storage** — server passwords encrypted at rest with AES-256-GCM
 - **Cron job management** — view, add, edit, enable/disable, delete, and run cron jobs directly from the server detail page
-- **Persistent log file** — all output written to `./log` with automatic retention-based cleanup (default: 3 days)
+- **Persistent log file** — all output written to a log file in your user cache directory (e.g. `~/.cache/belochka/belochka.log`) with automatic retention-based cleanup (default: 3 days)
 - **Multi-language UI** — English, Chinese, French, and Russian
 
 ## Quick Start
@@ -33,8 +33,8 @@ Download the latest binary from [Releases](https://github.com/Unmovable8911/Belo
 chmod +x belochka-linux-amd64
 ./belochka-linux-amd64
 
-# Windows (amd64)
-belochka-windows-amd64.exe
+# Windows (64-bit)
+belochka-windows-x86-64.exe
 ```
 
 Open `http://localhost:53136` in your browser. Add servers through the UI.
@@ -57,7 +57,8 @@ make release
 # Outputs:
 #   bin/belochka-linux-amd64
 #   bin/belochka-linux-arm64
-#   bin/belochka-windows-amd64.exe
+#   bin/belochka-windows-x86-64.exe
+#   bin/belochka-windows-x86.exe
 ```
 
 ## Configuration
@@ -83,7 +84,7 @@ encryption_key: "" # AES-256 key; leave empty to auto-generate
 | Variable | Description |
 |---|---|
 | `BELOCHKA_ENCRYPTION_KEY` | Overrides `encryption_key` from the config file |
-| `BELOCHKA_LOG_RETENTION_DAYS` | Number of days to keep log entries in `./log` (default: `3`) |
+| `BELOCHKA_LOG_RETENTION_DAYS` | Number of days to keep log entries in the log file (default: `3`) |
 
 ### Encryption Key
 
