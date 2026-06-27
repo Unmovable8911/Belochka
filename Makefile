@@ -17,18 +17,18 @@ build:
 clean:
 	rm -rf bin web/dist
 
+# Local release builds Linux and Windows only. systray is pure Go on these
+# platforms, so they cross-compile with CGO disabled — no C toolchain needed.
+# macOS binaries need cgo (Cocoa) and an Xcode toolchain, so they are produced
+# exclusively by CI (see .github/workflows/release.yml).
 release: clean
 	cd web && npm ci && npm run build
 	mkdir -p bin
-	CGO_ENABLED=1 \
-	  GOOS=linux GOARCH=amd64 \
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 	  go build -ldflags "$(LDFLAGS)" -o bin/belochka-linux-amd64 ./cmd/server/
-	PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
-	  CC=aarch64-linux-gnu-gcc \
-	  CGO_ENABLED=1 \
-	  GOOS=linux GOARCH=arm64 \
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 	  go build -ldflags "$(LDFLAGS)" -o bin/belochka-linux-arm64 ./cmd/server/
-	CC=x86_64-w64-mingw32-gcc \
-	  CGO_ENABLED=1 \
-	  GOOS=windows GOARCH=amd64 \
-	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-windows-amd64.exe ./cmd/server/
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-windows-x86-64.exe ./cmd/server/
+	CGO_ENABLED=0 GOOS=windows GOARCH=386 \
+	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-windows-x86.exe ./cmd/server/
