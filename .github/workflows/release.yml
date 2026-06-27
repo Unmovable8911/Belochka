@@ -22,9 +22,31 @@ jobs:
         with:
           node-version: 24
 
-      # Frontend build is split into discrete steps so that, if anything
-      # fails, the failing command is obvious from the job summary alone
-      # (no need to dig through logs).
+      # Install system libraries needed for CGo (fyne.io/systray):
+      #   amd64 native build    — libayatana-appindicator3-dev
+      #   arm64 cross build     — libayatana-appindicator3-dev:arm64 + gcc-aarch64-linux-gnu
+      #   windows cross build   — gcc-mingw-w64-x86-64 (Win32 headers bundled with MinGW)
+      - name: Set up arm64 apt sources
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo sed -i 's/^deb http/deb [arch=amd64] http/' /etc/apt/sources.list
+          sudo sed -i 's/^deb mirror/deb [arch=amd64] mirror/' /etc/apt/sources.list || true
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse" \
+            | sudo tee /etc/apt/sources.list.d/arm64.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse" \
+            | sudo tee -a /etc/apt/sources.list.d/arm64.list
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libayatana-appindicator3-dev \
+            libayatana-appindicator3-dev:arm64 \
+            gcc-aarch64-linux-gnu \
+            gcc-mingw-w64-x86-64
+
+      # Frontend build split into discrete steps so failures are obvious
+      # in the job summary without digging through logs.
       - name: Install frontend deps
         working-directory: web
         run: npm ci
@@ -42,9 +64,21 @@ jobs:
           LDFLAGS: -s -w -X main.version=${{ github.ref_name }}
         run: |
           mkdir -p bin
-          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/belochka-linux-amd64       ./cmd/server/
-          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o bin/belochka-linux-arm64       ./cmd/server/
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/belochka-windows-amd64.exe ./cmd/server/
+
+          CGO_ENABLED=1 \
+          GOOS=linux GOARCH=amd64 \
+          go build -ldflags "$LDFLAGS" -o bin/belochka-linux-amd64 ./cmd/server/
+
+          PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+          CC=aarch64-linux-gnu-gcc \
+          CGO_ENABLED=1 \
+          GOOS=linux GOARCH=arm64 \
+          go build -ldflags "$LDFLAGS" -o bin/belochka-linux-arm64 ./cmd/server/
+
+          CC=x86_64-w64-mingw32-gcc \
+          CGO_ENABLED=1 \
+          GOOS=windows GOARCH=amd64 \
+          go build -ldflags "$LDFLAGS -H windowsgui" -o bin/belochka-windows-amd64.exe ./cmd/server/
 
       - name: Create checksums
         run: cd bin && sha256sum * > checksums.txt
