@@ -45,7 +45,6 @@ Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, sim
 
 ## Future Consideration
 
-- Cron job management
 - Public internet deployment
 - SSH key passphrase support
 - User-configurable card ordering (drag and drop)

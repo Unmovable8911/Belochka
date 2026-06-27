@@ -19,6 +19,7 @@ Belochka (белочка, "squirrel") is a single-binary server monitoring tool 
 - **Single binary** — Go backend with embedded React frontend; one file to deploy, nothing else to install
 - **Persistent SSH connections** — automatic reconnection with exponential backoff and keepalive
 - **Encrypted credential storage** — server passwords encrypted at rest with AES-256-GCM
+- **Cron job management** — view, add, edit, enable/disable, delete, and run cron jobs directly from the server detail page
 - **Multi-language UI** — English, Chinese, French, and Russian
 
 ## Quick Start

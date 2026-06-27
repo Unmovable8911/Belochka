@@ -464,17 +464,6 @@ export default function ServerDetail() {
       {/* Cron Jobs tab panel */}
       {activeTab === "crons" && (
         <div data-testid="cron-jobs-tab">
-          <div className="flex justify-end mb-4">
-            <Button
-              size="sm"
-              onClick={handleOpenAdd}
-              className="cursor-pointer"
-            >
-              <Plus className="size-4 mr-1" />
-              {t("cronJobs.addButton")}
-            </Button>
-          </div>
-
           {cronsLoading && (
             <div data-testid="cron-loading" className="flex items-center gap-2 text-muted-foreground py-8">
               <div className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -584,6 +573,16 @@ export default function ServerDetail() {
                 ))}
               </tbody>
             </table>
+          )}
+
+          {cronsResult && !cronsLoading && !cronsError && (
+            <button
+              onClick={handleOpenAdd}
+              className="mt-2 w-full rounded-md border border-dashed border-border bg-transparent py-2 text-sm text-muted-foreground hover:border-foreground/40 hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Plus className="inline size-4 mr-1 align-text-bottom" />
+              {t("cronJobs.addButton")}
+            </button>
           )}
         </div>
       )}

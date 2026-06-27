@@ -19,6 +19,7 @@ Belochka (белочка, « écureuil ») est un outil de surveillance serveur 
 - **Binaire unique** — backend Go avec frontend React embarqué ; un seul fichier à déployer, rien d'autre à installer
 - **Connexions SSH persistantes** — reconnexion automatique avec backoff exponentiel et keepalive
 - **Stockage chiffré des identifiants** — mots de passe serveur chiffrés au repos avec AES-256-GCM
+- **Gestion des tâches cron** — consulter, ajouter, modifier, activer/désactiver, supprimer et exécuter immédiatement des tâches cron depuis la vue détaillée du serveur
 - **Interface multilingue** — anglais, chinois, français et russe
 
 ## Démarrage rapide
