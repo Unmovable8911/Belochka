@@ -29,12 +29,23 @@ jobs:
       - name: Set up arm64 apt sources
         run: |
           sudo dpkg --add-architecture arm64
-          sudo sed -i 's/^deb http/deb [arch=amd64] http/' /etc/apt/sources.list
-          sudo sed -i 's/^deb mirror/deb [arch=amd64] mirror/' /etc/apt/sources.list || true
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse" \
-            | sudo tee /etc/apt/sources.list.d/arm64.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse" \
-            | sudo tee -a /etc/apt/sources.list.d/arm64.list
+          CODENAME=$(lsb_release -cs)
+
+          # Restrict existing sources to amd64 so apt-get update does not try
+          # to fetch arm64 indexes from the amd64-only Azure mirror (404 -> exit 100).
+          # ubuntu-24.04 runners use the deb822 format; older runners use one-line.
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i '/^Architectures:/d' /etc/apt/sources.list.d/ubuntu.sources
+            sudo sed -i 's|^URIs:.*|&\nArchitectures: amd64|' /etc/apt/sources.list.d/ubuntu.sources
+          else
+            sudo sed -i 's/^deb \(http\|mirror\)/deb [arch=amd64] \1/' /etc/apt/sources.list
+          fi
+
+          # arm64 packages are served from ports.ubuntu.com, not the Azure mirror.
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $CODENAME main restricted universe multiverse" \
+            | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $CODENAME-updates main restricted universe multiverse" \
+            | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
 
       - name: Install system dependencies
         run: |
