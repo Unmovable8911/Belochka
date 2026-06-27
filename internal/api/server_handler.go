@@ -191,16 +191,23 @@ func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-
-	srv, err := h.store.GetByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, model.ErrServerNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Server not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
+	var srv model.Server
+	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
 		return
+	}
+
+	if problems := validateServer(srv); len(problems) > 0 {
+		writeError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
+		return
+	}
+
+	// When re-testing an existing server without re-entering its password,
+	// reuse the stored secret. This is read-only and persists nothing.
+	if srv.AuthType == model.AuthTypePassword && srv.Password == "" && srv.ID != "" {
+		if stored, err := h.store.GetByID(r.Context(), srv.ID); err == nil {
+			srv.Password = stored.Password
+		}
 	}
 
 	result, err := h.tester.TestConnection(srv)

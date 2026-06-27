@@ -80,7 +80,7 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 		r.Put("/api/servers/{id}", sh.update)
 		r.Delete("/api/servers/{id}", sh.delete)
 		if cfg.sshTester != nil {
-			r.Post("/api/servers/{id}/test", sh.testConnection)
+			r.Post("/api/servers/test", sh.testConnection)
 		}
 	}
 

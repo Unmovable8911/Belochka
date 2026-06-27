@@ -46,10 +46,10 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `Application` struct with `New()`, `Start()`, `Shutdown()`, `Addr()`
 
 ### internal/api
-- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, health check, WebSocket upgrade, terminal WebSocket endpoint, and static file serving.
+- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, a stateless connection-test endpoint, health check, WebSocket upgrade, terminal WebSocket endpoint, and static file serving.
 - **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`
 - **Dependencies**: hub, model, ssh, static, terminal
-- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalSessionOpener`); `ServerStore` and `SSHTester` interfaces
+- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalHandler`); `ServerStore` and `SSHTester` interfaces. The terminal `*terminal.Handler` is created by `internal/app` and injected here (single instance, so `Shutdown` closes the same handler that serves traffic).
 
 ### internal/hub
 - **Purpose**: WebSocket client management. Handles upgrade, registration, broadcast fan-out, connection limits (max 10), and graceful close with 1001 Going Away frame.
@@ -85,7 +85,7 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Purpose**: Shared domain types used across all backend modules. Raw metrics (jiffy counters, byte counters) and computed snapshots (percentages, rates).
 - **Key Files**: `internal/model/model.go`
 - **Dependencies**: none
-- **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot`, `CPUUsage`, `NetworkRate`
+- **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot`, `CPUUsage`, `NetworkRate`; `ErrServerNotFound` sentinel error (wrapped by `store`, matched via `errors.Is` in `api`)
 
 ### internal/config
 - **Purpose**: Loads YAML config file (default `belochka.yaml`), falls back to built-in defaults (port 53136, data dir `./data`). `BELOCHKA_ENCRYPTION_KEY` env var overrides file value.
@@ -134,6 +134,7 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 8. **Frontend rendering**: `WebSocketProvider` receives messages → `useMonitorState` hook updates React state → Dashboard/ServerDetail re-render with fresh metrics. All UI strings resolve through `react-i18next` `t()` calls against the active language's translation file.
 9. **Server CRUD**: REST API (`POST/GET/PUT/DELETE /api/servers`) persists to SQLite, then triggers `onServerChange` callback which re-syncs SSH pool and broadcasts updated state.
 10. **Terminal session**: Browser opens WebSocket to `/api/ws/terminal/{serverID}` → terminal Handler calls `SessionOpener.OpenSession()` to get an SSH session from Pool → requests PTY (xterm-256color) → starts shell → bridges stdin/stdout bidirectionally as binary WebSocket frames. Resize control messages (JSON text frames) trigger `WindowChange`. On SSH EOF or WebSocket close, session is cleaned up.
+11. **Connection test**: `POST /api/servers/test` accepts a full server config in the request body and runs `ssh.TestConnection` without persisting anything (no DB writes, no pool sync). When the password is omitted but an `id` is supplied, the stored secret is read (read-only) and reused. The Add/Edit dialogs test against in-memory form data and persist only on Save, so cancelling never leaves orphaned server records.
 
 ## External Dependencies
 - **i18next / react-i18next**: Frontend internationalization framework with React bindings; language auto-detected from browser, persisted in localStorage, switchable via UI

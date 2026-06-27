@@ -151,8 +151,9 @@ export function EditServerDialog({
     setFingerprintTrusted(false)
 
     try {
-      await api.updateServer(server.id, buildUpdateBody())
-      const result = await api.testConnection(server.id)
+      // Stateless test: pass the id so the backend can reuse the stored
+      // password when it was not re-entered. Nothing is persisted here.
+      const result = await api.testConnection({ ...buildUpdateBody(), id: server.id })
       setFingerprint(result.fingerprint)
     } catch (err) {
       setTestError(

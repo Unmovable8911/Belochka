@@ -56,6 +56,10 @@ export async function deleteServer(id: string): Promise<void> {
   return request<void>(`/api/servers/${id}`, { method: "DELETE" })
 }
 
-export async function testConnection(id: string): Promise<TestResult> {
-  return request<TestResult>(`/api/servers/${id}/test`, { method: "POST" })
+export async function testConnection(data: Record<string, unknown>): Promise<TestResult> {
+  return request<TestResult>("/api/servers/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
 }
