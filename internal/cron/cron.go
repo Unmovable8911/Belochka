@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -86,6 +87,13 @@ func parseCronLine(line string) (CronEntry, bool) {
 		DayOfWeek:  fields[4],
 		Command:    strings.Join(fields[5:], " "),
 	}, true
+}
+
+// BuildCronLine constructs a standard cron line from the given entry's schedule
+// fields and command.
+func BuildCronLine(entry CronEntry) string {
+	return fmt.Sprintf("%s %s %s %s %s %s",
+		entry.Minute, entry.Hour, entry.DayOfMonth, entry.Month, entry.DayOfWeek, entry.Command)
 }
 
 // isEnvVar reports whether line looks like a shell env var assignment (NAME=value).

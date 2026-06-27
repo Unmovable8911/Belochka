@@ -1,11 +1,14 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"belochka/internal/api"
@@ -124,5 +127,193 @@ func TestGetCrons_EmptyCrontab_ReturnsEmptyArrays(t *testing.T) {
 	passthroughs := result["passthroughs"].([]interface{})
 	if len(passthroughs) != 0 {
 		t.Errorf("expected 0 passthroughs for empty crontab, got %d", len(passthroughs))
+	}
+}
+
+// mockCronExecutorFn allows per-call control of the Execute response.
+type mockCronExecutorFn struct {
+	fn   func(cmd string) (string, error)
+	cmds []string
+}
+
+func (m *mockCronExecutorFn) Execute(_ context.Context, _, cmd string) (string, error) {
+	m.cmds = append(m.cmds, cmd)
+	return m.fn(cmd)
+}
+
+// decodeBase64FromWriteCmd extracts and decodes the base64 payload from a
+// crontab write command produced by createCron: "echo <b64> | base64 -d | crontab -"
+func decodeBase64FromWriteCmd(cmd string) (string, error) {
+	parts := strings.Fields(cmd)
+	if len(parts) < 2 {
+		return "", errors.New("unexpected write command format")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+func setupRouterWithCronFn(fn func(cmd string) (string, error)) (http.Handler, *mockCronExecutorFn) {
+	exec := &mockCronExecutorFn{fn: fn}
+	h := hub.New()
+	return api.NewRouter(h, api.WithCronExecutor(exec)), exec
+}
+
+func postCron(router http.Handler, serverID string, body interface{}) *httptest.ResponseRecorder {
+	data, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/"+serverID+"/crons", bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestCreateCron_ValidInput_Returns201WithEntry(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return "", nil // empty existing crontab
+		}
+		return "", nil // write succeeds
+	})
+
+	rec := postCron(router, "srv-1", map[string]string{
+		"minute":     "30",
+		"hour":       "2",
+		"dayOfMonth": "*",
+		"month":      "*",
+		"dayOfWeek":  "0",
+		"command":    "/usr/bin/weekly.sh",
+	})
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var entry map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&entry); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if entry["command"] != "/usr/bin/weekly.sh" {
+		t.Errorf("expected command /usr/bin/weekly.sh, got %v", entry["command"])
+	}
+	if entry["minute"] != "30" || entry["hour"] != "2" {
+		t.Errorf("wrong schedule fields: %v %v", entry["minute"], entry["hour"])
+	}
+	if entry["enabled"] != true {
+		t.Errorf("expected enabled=true for new entry")
+	}
+	if entry["raw"] != "30 2 * * 0 /usr/bin/weekly.sh" {
+		t.Errorf("unexpected raw: %v", entry["raw"])
+	}
+}
+
+func TestCreateCron_PreservesPassthroughLines(t *testing.T) {
+	existing := "MAILTO=root\n# comment\n0 * * * * /usr/bin/hourly.sh"
+	router, exec := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return existing, nil
+		}
+		return "", nil
+	})
+
+	postCron(router, "srv-1", map[string]string{
+		"minute":     "30",
+		"hour":       "2",
+		"dayOfMonth": "*",
+		"month":      "*",
+		"dayOfWeek":  "0",
+		"command":    "/usr/bin/weekly.sh",
+	})
+
+	// Find the write command (not the read command)
+	var writeCmd string
+	for _, cmd := range exec.cmds {
+		if !strings.Contains(cmd, "crontab -l") {
+			writeCmd = cmd
+			break
+		}
+	}
+	if writeCmd == "" {
+		t.Fatal("no write command issued")
+	}
+
+	written, err := decodeBase64FromWriteCmd(writeCmd)
+	if err != nil {
+		t.Fatalf("failed to decode write command: %v", err)
+	}
+	if !strings.Contains(written, "MAILTO=root") {
+		t.Errorf("written crontab missing MAILTO passthrough: %q", written)
+	}
+	if !strings.Contains(written, "# comment") {
+		t.Errorf("written crontab missing comment passthrough: %q", written)
+	}
+	if !strings.Contains(written, "0 * * * * /usr/bin/hourly.sh") {
+		t.Errorf("written crontab missing existing entry: %q", written)
+	}
+	if !strings.Contains(written, "30 2 * * 0 /usr/bin/weekly.sh") {
+		t.Errorf("written crontab missing new entry: %q", written)
+	}
+}
+
+func TestCreateCron_EmptyCommand_Returns400(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(_ string) (string, error) { return "", nil })
+
+	rec := postCron(router, "srv-1", map[string]string{
+		"minute":  "*",
+		"hour":    "*",
+		"command": "",
+	})
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	errObj, ok := resp["error"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected error object")
+	}
+	if errObj["code"] != "invalid_input" {
+		t.Errorf("expected code invalid_input, got %v", errObj["code"])
+	}
+}
+
+func TestCreateCron_SSHReadError_Returns502(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return "", errSSHFailed
+		}
+		return "", nil
+	})
+
+	rec := postCron(router, "srv-1", map[string]string{
+		"minute":  "*",
+		"hour":    "*",
+		"command": "/usr/bin/job.sh",
+	})
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateCron_SSHWriteError_Returns502(t *testing.T) {
+	router, _ := setupRouterWithCronFn(func(cmd string) (string, error) {
+		if strings.Contains(cmd, "crontab -l") {
+			return "", nil
+		}
+		return "", errSSHFailed
+	})
+
+	rec := postCron(router, "srv-1", map[string]string{
+		"minute":  "*",
+		"hour":    "*",
+		"command": "/usr/bin/job.sh",
+	})
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

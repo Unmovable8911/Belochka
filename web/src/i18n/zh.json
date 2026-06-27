@@ -106,6 +106,36 @@
     "empty": "未配置定时任务。",
     "error": "加载定时任务失败。",
     "statusEnabled": "已启用",
-    "statusDisabled": "已禁用"
+    "statusDisabled": "已禁用",
+    "addButton": "添加",
+    "addDialogTitle": "添加定时任务",
+    "fieldMinute": "分钟",
+    "fieldHour": "小时",
+    "fieldDayOfMonth": "日",
+    "fieldMonth": "月",
+    "fieldDayOfWeek": "星期",
+    "fieldCommand": "命令",
+    "fieldInvalid": "无效值",
+    "fieldCommandRequired": "命令不能为空",
+    "save": "保存",
+    "saving": "保存中...",
+    "cancel": "取消",
+    "saveFailed": "保存定时任务失败",
+    "scheduleEveryMinute": "每分钟",
+    "scheduleEveryNMinutes": "每 {{n}} 分钟",
+    "scheduleEveryHour": "每小时",
+    "scheduleEveryNHours": "每 {{n}} 小时",
+    "scheduleAtTimeDaily": "每天 {{time}}",
+    "scheduleAtTimeDow": "每周{{day}} {{time}}",
+    "scheduleCustom": "自定义计划",
+    "dayNames": {
+      "0": "日",
+      "1": "一",
+      "2": "二",
+      "3": "三",
+      "4": "四",
+      "5": "五",
+      "6": "六"
+    }
   }
 }

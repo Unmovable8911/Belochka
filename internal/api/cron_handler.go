@@ -2,7 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"belochka/internal/cron"
 
@@ -31,4 +35,63 @@ func (h *cronHandler) listCrons(w http.ResponseWriter, r *http.Request) {
 
 	result := cron.ParseCrontab(output)
 	writeJSON(w, http.StatusOK, result)
+}
+
+type createCronRequest struct {
+	Minute     string `json:"minute"`
+	Hour       string `json:"hour"`
+	DayOfMonth string `json:"dayOfMonth"`
+	Month      string `json:"month"`
+	DayOfWeek  string `json:"dayOfWeek"`
+	Command    string `json:"command"`
+}
+
+func (h *cronHandler) createCron(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req createCronRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.Command) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_input", "command is required")
+		return
+	}
+
+	// Read existing crontab.
+	existing, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
+		return
+	}
+
+	// Build new entry and append to existing content.
+	entry := cron.CronEntry{
+		Minute:     req.Minute,
+		Hour:       req.Hour,
+		DayOfMonth: req.DayOfMonth,
+		Month:      req.Month,
+		DayOfWeek:  req.DayOfWeek,
+		Command:    req.Command,
+		Enabled:    true,
+	}
+	newLine := cron.BuildCronLine(entry)
+	content := strings.TrimRight(existing, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	content += newLine + "\n"
+
+	// Write back using base64 to avoid shell escaping issues with arbitrary content.
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+	writeCmd := fmt.Sprintf("echo %s | base64 -d | crontab -", encoded)
+	if _, err := h.executor.Execute(r.Context(), id, writeCmd); err != nil {
+		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
+		return
+	}
+
+	entry.Raw = newLine
+	writeJSON(w, http.StatusCreated, entry)
 }

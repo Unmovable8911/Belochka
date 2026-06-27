@@ -1,4 +1,4 @@
-import type { Server, TestResult, CronResult } from "@/types/server"
+import type { Server, TestResult, CronResult, CronEntry } from "@/types/server"
 
 export class ApiError extends Error {
   code: string
@@ -66,4 +66,21 @@ export async function testConnection(data: Record<string, unknown>): Promise<Tes
 
 export async function getCrons(serverId: string): Promise<CronResult> {
   return request<CronResult>(`/api/servers/${serverId}/crons`)
+}
+
+export interface CreateCronPayload {
+  minute: string
+  hour: string
+  dayOfMonth: string
+  month: string
+  dayOfWeek: string
+  command: string
+}
+
+export async function createCron(serverId: string, payload: CreateCronPayload): Promise<CronEntry> {
+  return request<CronEntry>(`/api/servers/${serverId}/crons`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
 }

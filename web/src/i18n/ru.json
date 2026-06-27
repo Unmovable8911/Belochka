@@ -106,6 +106,36 @@
     "empty": "Задания cron не настроены.",
     "error": "Не удалось загрузить задания cron.",
     "statusEnabled": "Включено",
-    "statusDisabled": "Отключено"
+    "statusDisabled": "Отключено",
+    "addButton": "Добавить",
+    "addDialogTitle": "Добавить задание cron",
+    "fieldMinute": "Минута",
+    "fieldHour": "Час",
+    "fieldDayOfMonth": "День месяца",
+    "fieldMonth": "Месяц",
+    "fieldDayOfWeek": "День недели",
+    "fieldCommand": "Команда",
+    "fieldInvalid": "Неверное значение",
+    "fieldCommandRequired": "Команда обязательна",
+    "save": "Сохранить",
+    "saving": "Сохранение...",
+    "cancel": "Отмена",
+    "saveFailed": "Не удалось сохранить задание cron",
+    "scheduleEveryMinute": "Каждую минуту",
+    "scheduleEveryNMinutes": "Каждые {{n}} минут",
+    "scheduleEveryHour": "Каждый час",
+    "scheduleEveryNHours": "Каждые {{n}} часов",
+    "scheduleAtTimeDaily": "В {{time}} ежедневно",
+    "scheduleAtTimeDow": "В {{time}} в {{day}}",
+    "scheduleCustom": "Нестандартное расписание",
+    "dayNames": {
+      "0": "воскресенье",
+      "1": "понедельник",
+      "2": "вторник",
+      "3": "среду",
+      "4": "четверг",
+      "5": "пятницу",
+      "6": "субботу"
+    }
   }
 }

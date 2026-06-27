@@ -98,6 +98,22 @@ func TestParseCrontab_EmptyOutputReturnsEmptyResult(t *testing.T) {
 	}
 }
 
+func TestBuildCronLine(t *testing.T) {
+	entry := CronEntry{
+		Minute:     "0",
+		Hour:       "2",
+		DayOfMonth: "*",
+		Month:      "*",
+		DayOfWeek:  "1",
+		Command:    "/usr/bin/weekly.sh arg1 arg2",
+	}
+	got := BuildCronLine(entry)
+	want := "0 2 * * 1 /usr/bin/weekly.sh arg1 arg2"
+	if got != want {
+		t.Errorf("BuildCronLine() = %q, want %q", got, want)
+	}
+}
+
 func TestParseCrontab_MixedCrontab(t *testing.T) {
 	output := `# cron config
 MAILTO=admin

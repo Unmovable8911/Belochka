@@ -97,10 +97,11 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 		r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
 	}
 
-	// Cron list endpoint
+	// Cron endpoints
 	if cfg.cronExecutor != nil {
 		ch := &cronHandler{executor: cfg.cronExecutor}
 		r.Get("/api/servers/{id}/crons", ch.listCrons)
+		r.Post("/api/servers/{id}/crons", ch.createCron)
 	}
 
 	// Mount embedded static file serving if available (production mode).

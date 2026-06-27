@@ -106,6 +106,36 @@
     "empty": "Aucune tâche planifiée configurée.",
     "error": "Échec du chargement des tâches planifiées.",
     "statusEnabled": "Activé",
-    "statusDisabled": "Désactivé"
+    "statusDisabled": "Désactivé",
+    "addButton": "Ajouter",
+    "addDialogTitle": "Ajouter une tâche planifiée",
+    "fieldMinute": "Minute",
+    "fieldHour": "Heure",
+    "fieldDayOfMonth": "Jour du mois",
+    "fieldMonth": "Mois",
+    "fieldDayOfWeek": "Jour de la semaine",
+    "fieldCommand": "Commande",
+    "fieldInvalid": "Valeur invalide",
+    "fieldCommandRequired": "La commande est requise",
+    "save": "Enregistrer",
+    "saving": "Enregistrement...",
+    "cancel": "Annuler",
+    "saveFailed": "Échec de l'enregistrement de la tâche planifiée",
+    "scheduleEveryMinute": "Chaque minute",
+    "scheduleEveryNMinutes": "Toutes les {{n}} minutes",
+    "scheduleEveryHour": "Chaque heure",
+    "scheduleEveryNHours": "Toutes les {{n}} heures",
+    "scheduleAtTimeDaily": "À {{time}} chaque jour",
+    "scheduleAtTimeDow": "À {{time}} le {{day}}",
+    "scheduleCustom": "Planification personnalisée",
+    "dayNames": {
+      "0": "dimanche",
+      "1": "lundi",
+      "2": "mardi",
+      "3": "mercredi",
+      "4": "jeudi",
+      "5": "vendredi",
+      "6": "samedi"
+    }
   }
 }

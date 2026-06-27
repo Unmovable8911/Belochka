@@ -1,17 +1,18 @@
 import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Terminal, Trash2 } from "lucide-react"
+import { ArrowLeft, Plus, Terminal, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { DeleteServerDialog } from "@/components/DeleteServerDialog"
+import { AddCronDialog } from "@/components/AddCronDialog"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
 import { ProcessTable } from "@/components/ProcessTable"
 import { getCrons } from "@/api/client"
-import type { CronResult } from "@/types/server"
+import type { CronEntry, CronResult } from "@/types/server"
 
 type Tab = "overview" | "crons"
 
@@ -22,6 +23,7 @@ export default function ServerDetail() {
   const navigate = useNavigate()
 
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [addCronOpen, setAddCronOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
 
   const [cronsLoading, setCronsLoading] = useState(false)
@@ -32,24 +34,27 @@ export default function ServerDetail() {
   const server = state.servers.find((s) => s.id === id)
   const metrics = id ? state.metrics[id] : undefined
 
-  useEffect(() => {
-    if (activeTab !== "crons" || !id || cronsFetched) return
-
-    setCronsFetched(true)
+  function fetchCrons() {
+    if (!id) return
     setCronsLoading(true)
     setCronsError(null)
-
     getCrons(id)
-      .then((result) => {
-        setCronsResult(result)
-      })
-      .catch((err: Error) => {
-        setCronsError(err.message)
-      })
-      .finally(() => {
-        setCronsLoading(false)
-      })
+      .then((result) => setCronsResult(result))
+      .catch((err: Error) => setCronsError(err.message))
+      .finally(() => setCronsLoading(false))
+  }
+
+  useEffect(() => {
+    if (activeTab !== "crons" || !id || cronsFetched) return
+    setCronsFetched(true)
+    fetchCrons()
   }, [activeTab, id, cronsFetched])
+
+  function handleCronCreated(entry: CronEntry) {
+    setCronsResult((prev) =>
+      prev ? { ...prev, entries: [...prev.entries, entry] } : { entries: [entry], passthroughs: [] }
+    )
+  }
 
   if (!server) {
     return (
@@ -107,6 +112,15 @@ export default function ServerDetail() {
           navigate("/")
         }}
       />
+
+      {id && (
+        <AddCronDialog
+          serverId={id}
+          open={addCronOpen}
+          onOpenChange={setAddCronOpen}
+          onCreated={handleCronCreated}
+        />
+      )}
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b mb-6" role="tablist">
@@ -255,6 +269,17 @@ export default function ServerDetail() {
       {/* Cron Jobs tab panel */}
       {activeTab === "crons" && (
         <div data-testid="cron-jobs-tab">
+          <div className="flex justify-end mb-4">
+            <Button
+              size="sm"
+              onClick={() => setAddCronOpen(true)}
+              className="cursor-pointer"
+            >
+              <Plus className="size-4 mr-1" />
+              {t("cronJobs.addButton")}
+            </Button>
+          </div>
+
           {cronsLoading && (
             <div data-testid="cron-loading" className="flex items-center gap-2 text-muted-foreground py-8">
               <div className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
