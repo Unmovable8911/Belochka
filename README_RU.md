@@ -33,11 +33,6 @@ Belochka (белочка) — инструмент мониторинга сер
 chmod +x belochka-linux-amd64
 ./belochka-linux-amd64
 
-# macOS (Apple Silicon)
-chmod +x belochka-darwin-arm64
-xattr -d com.apple.quarantine belochka-darwin-arm64  # снять карантин Gatekeeper
-./belochka-darwin-arm64
-
 # Windows (64-бит)
 belochka-windows-x86-64.exe
 ```
@@ -59,7 +54,7 @@ make build
 
 ```bash
 make release
-# Результат (только Linux + Windows; бинарные файлы macOS собирает только CI):
+# Результат:
 #   bin/belochka-linux-amd64
 #   bin/belochka-linux-arm64
 #   bin/belochka-windows-x86-64.exe

@@ -33,50 +33,30 @@ jobs:
           name: web-dist
           path: web/dist
 
-  # fyne.io/systray only uses cgo on macOS (Cocoa). Its Linux backend talks
-  # D-Bus and its Windows backend uses the Win32 API, both pure Go — so the
-  # Linux and Windows binaries cross-compile from a single ubuntu runner with
-  # CGO disabled, with no apt packages or mingw to wrangle. Only the macOS
-  # targets need cgo, and they build natively on their matching runner.
+  # fyne.io/systray's Linux backend talks D-Bus and its Windows backend uses
+  # the Win32 API, both pure Go — so every target cross-compiles from a single
+  # ubuntu runner with CGO disabled, with no apt packages or mingw to wrangle.
   build:
     needs: frontend
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
-            goos: linux
+          - goos: linux
             goarch: amd64
-            cgo: '0'
             output: belochka-linux-amd64
-          - runner: ubuntu-24.04
-            goos: linux
+          - goos: linux
             goarch: arm64
-            cgo: '0'
             output: belochka-linux-arm64
-          - runner: ubuntu-24.04
-            goos: windows
+          - goos: windows
             goarch: amd64
-            cgo: '0'
             ldextra: ' -H windowsgui'
             output: belochka-windows-x86-64.exe
-          - runner: ubuntu-24.04
-            goos: windows
+          - goos: windows
             goarch: '386'
-            cgo: '0'
             ldextra: ' -H windowsgui'
             output: belochka-windows-x86.exe
-          - runner: macos-13
-            goos: darwin
-            goarch: amd64
-            cgo: '1'
-            output: belochka-darwin-amd64
-          - runner: macos-14
-            goos: darwin
-            goarch: arm64
-            cgo: '1'
-            output: belochka-darwin-arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +75,7 @@ jobs:
           LDFLAGS: -s -w -X main.version=${{ github.ref_name }}
         run: |
           mkdir -p bin
-          export CGO_ENABLED=${{ matrix.cgo }}
+          export CGO_ENABLED=0
           export GOOS=${{ matrix.goos }}
           export GOARCH=${{ matrix.goarch }}
           go build -ldflags "$LDFLAGS${{ matrix.ldextra }}" -o "bin/${{ matrix.output }}" ./cmd/server/
@@ -150,6 +130,4 @@ jobs:
             bin/belochka-linux-arm64
             bin/belochka-windows-x86-64.exe
             bin/belochka-windows-x86.exe
-            bin/belochka-darwin-amd64
-            bin/belochka-darwin-arm64
             bin/checksums.txt

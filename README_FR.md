@@ -33,11 +33,6 @@ Téléchargez le dernier binaire depuis les [Releases](https://github.com/Unmova
 chmod +x belochka-linux-amd64
 ./belochka-linux-amd64
 
-# macOS (Apple Silicon)
-chmod +x belochka-darwin-arm64
-xattr -d com.apple.quarantine belochka-darwin-arm64  # lever la mise en quarantaine Gatekeeper
-./belochka-darwin-arm64
-
 # Windows (64 bits)
 belochka-windows-x86-64.exe
 ```
@@ -59,7 +54,7 @@ Compilation croisée des binaires de release pour toutes les plateformes :
 
 ```bash
 make release
-# Produit (Linux + Windows uniquement ; les binaires macOS sont produits par la CI) :
+# Produit :
 #   bin/belochka-linux-amd64
 #   bin/belochka-linux-arm64
 #   bin/belochka-windows-x86-64.exe

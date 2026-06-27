@@ -17,10 +17,8 @@ build:
 clean:
 	rm -rf bin web/dist
 
-# Local release builds Linux and Windows only. systray is pure Go on these
-# platforms, so they cross-compile with CGO disabled — no C toolchain needed.
-# macOS binaries need cgo (Cocoa) and an Xcode toolchain, so they are produced
-# exclusively by CI (see .github/workflows/release.yml).
+# Release builds Linux and Windows. systray is pure Go on these platforms, so
+# they cross-compile with CGO disabled — no C toolchain needed.
 release: clean
 	cd web && npm ci && npm run build
 	mkdir -p bin

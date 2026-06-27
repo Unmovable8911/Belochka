@@ -33,11 +33,6 @@ Download the latest binary from [Releases](https://github.com/Unmovable8911/Belo
 chmod +x belochka-linux-amd64
 ./belochka-linux-amd64
 
-# macOS (Apple Silicon)
-chmod +x belochka-darwin-arm64
-xattr -d com.apple.quarantine belochka-darwin-arm64  # clear Gatekeeper quarantine
-./belochka-darwin-arm64
-
 # Windows (64-bit)
 belochka-windows-x86-64.exe
 ```
@@ -59,7 +54,7 @@ Cross-compile release binaries for all platforms:
 
 ```bash
 make release
-# Outputs (Linux + Windows; macOS binaries are produced by CI only):
+# Outputs:
 #   bin/belochka-linux-amd64
 #   bin/belochka-linux-arm64
 #   bin/belochka-windows-x86-64.exe
