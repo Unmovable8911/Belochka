@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import type { Server } from "@/types/server"
+import { getServer } from "@/api/client"
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected"
 
@@ -21,10 +22,7 @@ export default function Console() {
 
   useEffect(() => {
     if (!id) return
-    fetch(`/api/servers/${id}`)
-      .then((r) => r.json())
-      .then(setServer)
-      .catch(() => {})
+    getServer(id).then(setServer).catch(() => {})
   }, [id])
 
   const connect = useCallback(() => {

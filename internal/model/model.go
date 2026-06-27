@@ -1,8 +1,13 @@
 package model
 
 import (
+	"errors"
 	"time"
 )
+
+// ErrServerNotFound is returned by the store when a server does not exist.
+// API handlers detect it via errors.Is to map to an HTTP 404 response.
+var ErrServerNotFound = errors.New("server not found")
 
 // AuthType represents the SSH authentication method for a server.
 type AuthType string

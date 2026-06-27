@@ -148,7 +148,7 @@ func (s *SQLiteStore) GetByID(ctx context.Context, id string) (model.Server, err
 		&srv.CreatedAt, &srv.UpdatedAt)
 
 	if err == sql.ErrNoRows {
-		return model.Server{}, fmt.Errorf("server not found: %s", id)
+		return model.Server{}, fmt.Errorf("%w: %s", model.ErrServerNotFound, id)
 	}
 	if err != nil {
 		return model.Server{}, fmt.Errorf("query server: %w", err)
@@ -255,7 +255,7 @@ func (s *SQLiteStore) Update(ctx context.Context, srv model.Server) (model.Serve
 		return model.Server{}, fmt.Errorf("rows affected: %w", err)
 	}
 	if rows == 0 {
-		return model.Server{}, fmt.Errorf("server not found: %s", srv.ID)
+		return model.Server{}, fmt.Errorf("%w: %s", model.ErrServerNotFound, srv.ID)
 	}
 
 	// Re-read from DB to get the complete, consistent state
@@ -274,7 +274,7 @@ func (s *SQLiteStore) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("server not found: %s", id)
+		return fmt.Errorf("%w: %s", model.ErrServerNotFound, id)
 	}
 
 	return nil

@@ -20,7 +20,7 @@ type routerConfig struct {
 	serverStore           ServerStore
 	sshTester             SSHTester
 	onServerChange        func()
-	terminalSessionOpener terminal.SessionOpener
+	terminalHandler       *terminal.Handler
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -52,10 +52,10 @@ func WithOnServerChange(fn func()) RouterOption {
 	}
 }
 
-// WithTerminalSessionOpener enables the terminal WebSocket endpoint.
-func WithTerminalSessionOpener(opener terminal.SessionOpener) RouterOption {
+// WithTerminalHandler enables the terminal WebSocket endpoint.
+func WithTerminalHandler(h *terminal.Handler) RouterOption {
 	return func(c *routerConfig) {
-		c.terminalSessionOpener = opener
+		c.terminalHandler = h
 	}
 }
 
@@ -85,9 +85,8 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	}
 
 	// Terminal WebSocket endpoint
-	if cfg.terminalSessionOpener != nil {
-		th := terminal.NewHandler(cfg.terminalSessionOpener)
-		r.Get("/api/ws/terminal/{serverID}", th.ServeHTTP)
+	if cfg.terminalHandler != nil {
+		r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
 	}
 
 	// Mount embedded static file serving if available (production mode).

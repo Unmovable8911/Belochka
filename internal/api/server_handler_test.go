@@ -36,7 +36,7 @@ func (m *mockStore) Create(_ context.Context, srv model.Server) (model.Server, e
 func (m *mockStore) GetByID(_ context.Context, id string) (model.Server, error) {
 	srv, ok := m.servers[id]
 	if !ok {
-		return model.Server{}, fmt.Errorf("server not found: %s", id)
+		return model.Server{}, fmt.Errorf("%w: %s", model.ErrServerNotFound, id)
 	}
 	return srv, nil
 }
@@ -52,7 +52,7 @@ func (m *mockStore) List(_ context.Context) ([]model.Server, error) {
 func (m *mockStore) Update(_ context.Context, srv model.Server) (model.Server, error) {
 	existing, ok := m.servers[srv.ID]
 	if !ok {
-		return model.Server{}, fmt.Errorf("server not found: %s", srv.ID)
+		return model.Server{}, fmt.Errorf("%w: %s", model.ErrServerNotFound, srv.ID)
 	}
 	srv.CreatedAt = existing.CreatedAt
 	if srv.Password == "" {
@@ -64,7 +64,7 @@ func (m *mockStore) Update(_ context.Context, srv model.Server) (model.Server, e
 
 func (m *mockStore) Delete(_ context.Context, id string) error {
 	if _, ok := m.servers[id]; !ok {
-		return fmt.Errorf("server not found: %s", id)
+		return fmt.Errorf("%w: %s", model.ErrServerNotFound, id)
 	}
 	delete(m.servers, id)
 	return nil

@@ -133,7 +133,7 @@ func (h *serverHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	srv, err := h.store.GetByID(r.Context(), id)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, model.ErrServerNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
@@ -162,7 +162,7 @@ func (h *serverHandler) update(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.store.Update(r.Context(), srv)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, model.ErrServerNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
@@ -178,7 +178,7 @@ func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := h.store.Delete(r.Context(), id); err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, model.ErrServerNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
@@ -195,7 +195,7 @@ func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	srv, err := h.store.GetByID(r.Context(), id)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, model.ErrServerNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
