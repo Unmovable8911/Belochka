@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 
+	"belochka/internal/cron"
 	"belochka/internal/hub"
 	"belochka/internal/static"
 	"belochka/internal/terminal"
@@ -21,7 +22,7 @@ type routerConfig struct {
 	sshTester       SSHTester
 	onServerChange  func()
 	terminalHandler *terminal.Handler
-	cronExecutor    CronExecutor
+	cronExecutor    cron.Executor
 	cronRunner      CronRunner
 }
 
@@ -62,7 +63,7 @@ func WithTerminalHandler(h *terminal.Handler) RouterOption {
 }
 
 // WithCronExecutor enables the cron list endpoint.
-func WithCronExecutor(executor CronExecutor) RouterOption {
+func WithCronExecutor(executor cron.Executor) RouterOption {
 	return func(c *routerConfig) {
 		c.cronExecutor = executor
 	}
@@ -107,7 +108,7 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 
 	// Cron endpoints
 	if cfg.cronExecutor != nil {
-		ch := &cronHandler{executor: cfg.cronExecutor, runner: cfg.cronRunner}
+		ch := &cronHandler{service: cron.NewService(cfg.cronExecutor), runner: cfg.cronRunner}
 		r.Get("/api/servers/{id}/crons", ch.listCrons)
 		r.Post("/api/servers/{id}/crons", ch.createCron)
 		r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)

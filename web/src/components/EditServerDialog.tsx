@@ -8,17 +8,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { ServerForm } from "@/components/ServerForm"
+import { useServerForm } from "@/hooks/useServerForm"
 import { toast } from "sonner"
-import type { AuthType, Server, ServerFormData } from "@/types/server"
+import type { Server, ServerFormData } from "@/types/server"
 import * as api from "@/api/client"
 
 export interface EditServerDialogProps {
@@ -74,11 +67,18 @@ export function EditServerDialog({
   const { t } = useTranslation()
   const [form, setForm] = useState<ServerFormData>(() => serverToForm(server))
   const [originalForm] = useState<ServerFormData>(() => serverToForm(server))
-  const [testing, setTesting] = useState(false)
-  const [testError, setTestError] = useState<string | null>(null)
-  const [fingerprint, setFingerprint] = useState<string | null>(null)
-  const [fingerprintTrusted, setFingerprintTrusted] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const {
+    testing,
+    testError,
+    fingerprint,
+    fingerprintTrusted,
+    saving,
+    setTestError,
+    setSaving,
+    trust,
+    resetTestState,
+    runTest,
+  } = useServerForm()
 
   // Re-sync form when server prop changes
   useEffect(() => {
@@ -96,12 +96,12 @@ export function EditServerDialog({
     value: ServerFormData[K],
   ) {
     setForm((prev) => ({ ...prev, [key]: value }))
-    setTestError(null)
 
-    // Reset test state when connection fields change
+    // Reset test state when connection fields change; otherwise just clear errors.
     if (CONNECTION_FIELDS.includes(key)) {
-      setFingerprint(null)
-      setFingerprintTrusted(false)
+      resetTestState()
+    } else {
+      setTestError(null)
     }
   }
 
@@ -144,24 +144,10 @@ export function EditServerDialog({
     return body
   }
 
-  async function handleTestConnection() {
-    setTesting(true)
-    setTestError(null)
-    setFingerprint(null)
-    setFingerprintTrusted(false)
-
-    try {
-      // Stateless test: pass the id so the backend can reuse the stored
-      // password when it was not re-entered. Nothing is persisted here.
-      const result = await api.testConnection({ ...buildUpdateBody(), id: server.id })
-      setFingerprint(result.fingerprint)
-    } catch (err) {
-      setTestError(
-        err instanceof Error ? err.message : t("addServer.connectionTestFailed"),
-      )
-    } finally {
-      setTesting(false)
-    }
+  function handleTestConnection() {
+    // Stateless test: pass the id so the backend can reuse the stored
+    // password when it was not re-entered. Nothing is persisted here.
+    return runTest({ ...buildUpdateBody(), id: server.id })
   }
 
   async function handleSave() {
@@ -192,132 +178,22 @@ export function EditServerDialog({
           <DialogTitle>{t("editServer.title")}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="edit-server-name">{t("addServer.name")}</Label>
-            <Input
-              id="edit-server-name"
-              placeholder="Production Web Server"
-              value={form.name}
-              onChange={(e) => updateField("name", e.target.value)}
-            />
-          </div>
+        <ServerForm
+          form={form}
+          onFieldChange={updateField}
+          idPrefix="edit-"
+          fingerprint={fingerprint}
+          fingerprintTrusted={fingerprintTrusted}
+          onTrust={trust}
+          testError={testError}
+          passwordPlaceholder="unchanged"
+        />
 
-          <div className="grid grid-cols-[1fr_auto] gap-2">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-server-host">{t("addServer.host")}</Label>
-              <Input
-                id="edit-server-host"
-                placeholder="192.168.1.100"
-                value={form.host}
-                onChange={(e) => updateField("host", e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-server-port">{t("addServer.port")}</Label>
-              <Input
-                id="edit-server-port"
-                type="number"
-                className="w-20"
-                value={form.port}
-                onChange={(e) =>
-                  updateField("port", parseInt(e.target.value) || 22)
-                }
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="edit-server-username">{t("addServer.username")}</Label>
-            <Input
-              id="edit-server-username"
-              placeholder="root"
-              value={form.username}
-              onChange={(e) => updateField("username", e.target.value)}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label id="edit-auth-type-label">{t("addServer.authentication")}</Label>
-            <Select
-              value={form.authType}
-              onValueChange={(value: AuthType) =>
-                updateField("authType", value)
-              }
-            >
-              <SelectTrigger
-                className="w-full"
-                aria-labelledby="edit-auth-type-label"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="password">Password</SelectItem>
-                <SelectItem value="key">SSH Key</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {form.authType === "password" ? (
-            <div className="grid gap-2">
-              <Label htmlFor="edit-server-password">{t("addServer.password")}</Label>
-              <Input
-                id="edit-server-password"
-                type="password"
-                placeholder="unchanged"
-                value={form.password}
-                onChange={(e) => updateField("password", e.target.value)}
-              />
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              <Label htmlFor="edit-server-keypath">{t("addServer.keyFilePath")}</Label>
-              <Input
-                id="edit-server-keypath"
-                placeholder="/home/user/.ssh/id_rsa"
-                value={form.keyPath}
-                onChange={(e) => updateField("keyPath", e.target.value)}
-              />
-            </div>
-          )}
-
-          {testError && (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              {testError}
-            </div>
-          )}
-
-          {fingerprint && (
-            <div className="rounded-md border p-3 space-y-2">
-              <p className="text-sm font-medium">{t("addServer.hostKeyFingerprint")}</p>
-              <code className="block text-xs break-all bg-muted p-2 rounded">
-                {fingerprint}
-              </code>
-              {!fingerprintTrusted ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFingerprintTrusted(true)}
-                >
-                  {t("addServer.trustThisHost")}
-                </Button>
-              ) : (
-                <p className="text-sm text-green-600 dark:text-green-400">
-                  {t("addServer.hostTrusted")}
-                </p>
-              )}
-            </div>
-          )}
-
-          {needsRetest && !testPassed && !testError && !testing && (
-            <p className="text-sm text-yellow-600 dark:text-yellow-400">
-              {t("editServer.retestRequired")}
-            </p>
-          )}
-        </div>
+        {needsRetest && !testPassed && !testError && !testing && (
+          <p className="text-sm text-yellow-600 dark:text-yellow-400">
+            {t("editServer.retestRequired")}
+          </p>
+        )}
 
         <DialogFooter>
           {needsRetest && (

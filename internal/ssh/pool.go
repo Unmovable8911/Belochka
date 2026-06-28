@@ -174,15 +174,15 @@ func (p *Pool) Remove(serverID string) {
 	mc.mu.Unlock()
 }
 
-// Execute runs a command on the specified server's SSH connection.
-// It implements monitor.SSHExecutor.
-func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error) {
+// clientFor returns the live SSH client for serverID, or an error if the
+// server is not in the pool or not currently connected.
+func (p *Pool) clientFor(serverID string) (*gossh.Client, error) {
 	p.mu.RLock()
 	mc, ok := p.conns[serverID]
 	p.mu.RUnlock()
 
 	if !ok {
-		return "", fmt.Errorf("no connection for server %s", serverID)
+		return nil, fmt.Errorf("no connection for server %s", serverID)
 	}
 
 	mc.mu.RLock()
@@ -190,7 +190,18 @@ func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error
 	mc.mu.RUnlock()
 
 	if client == nil {
-		return "", fmt.Errorf("server %s not connected", serverID)
+		return nil, fmt.Errorf("server %s not connected", serverID)
+	}
+
+	return client, nil
+}
+
+// Execute runs a command on the specified server's SSH connection.
+// It implements monitor.SSHExecutor.
+func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error) {
+	client, err := p.clientFor(serverID)
+	if err != nil {
+		return "", err
 	}
 
 	session, err := client.NewSession()
@@ -211,20 +222,9 @@ func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error
 // and any connection-level error. Unlike Execute, a non-zero exit code is not an
 // error — it is returned as exitCode. Only SSH connection failures return a non-nil error.
 func (p *Pool) RunCommand(ctx context.Context, serverID, cmd string) (string, int, error) {
-	p.mu.RLock()
-	mc, ok := p.conns[serverID]
-	p.mu.RUnlock()
-
-	if !ok {
-		return "", -1, fmt.Errorf("no connection for server %s", serverID)
-	}
-
-	mc.mu.RLock()
-	client := mc.client
-	mc.mu.RUnlock()
-
-	if client == nil {
-		return "", -1, fmt.Errorf("server %s not connected", serverID)
+	client, err := p.clientFor(serverID)
+	if err != nil {
+		return "", -1, err
 	}
 
 	session, err := client.NewSession()
@@ -246,20 +246,9 @@ func (p *Pool) RunCommand(ctx context.Context, serverID, cmd string) (string, in
 
 // OpenSession creates a new SSH session on the existing connection for the given server.
 func (p *Pool) OpenSession(serverID string) (*gossh.Session, error) {
-	p.mu.RLock()
-	mc, ok := p.conns[serverID]
-	p.mu.RUnlock()
-
-	if !ok {
-		return nil, fmt.Errorf("no connection for server %s", serverID)
-	}
-
-	mc.mu.RLock()
-	client := mc.client
-	mc.mu.RUnlock()
-
-	if client == nil {
-		return nil, fmt.Errorf("server %s not connected", serverID)
+	client, err := p.clientFor(serverID)
+	if err != nil {
+		return nil, err
 	}
 
 	return client.NewSession()

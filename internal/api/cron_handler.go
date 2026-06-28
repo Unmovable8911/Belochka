@@ -2,8 +2,8 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,11 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// CronExecutor runs shell commands on a remote server.
-type CronExecutor interface {
-	Execute(ctx context.Context, serverID, cmd string) (string, error)
-}
-
 // CronRunner executes a cron command and returns combined stdout+stderr output
 // and the exit code. Unlike CronExecutor, a non-zero exit code is not an error.
 type CronRunner interface {
@@ -27,21 +22,19 @@ type CronRunner interface {
 
 // cronHandler handles cron endpoints.
 type cronHandler struct {
-	executor CronExecutor
-	runner   CronRunner
+	service *cron.Service
+	runner  CronRunner
 }
 
 func (h *cronHandler) listCrons(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Use "|| true" to ensure exit 0 even when no crontab exists.
-	output, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
+	result, err := h.service.List(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
 		return
 	}
 
-	result := cron.ParseCrontab(output)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -68,14 +61,6 @@ func (h *cronHandler) createCron(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read existing crontab.
-	existing, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
-		return
-	}
-
-	// Build new entry and append to existing content.
 	entry := cron.CronEntry{
 		Minute:     req.Minute,
 		Hour:       req.Hour,
@@ -83,25 +68,15 @@ func (h *cronHandler) createCron(w http.ResponseWriter, r *http.Request) {
 		Month:      req.Month,
 		DayOfWeek:  req.DayOfWeek,
 		Command:    req.Command,
-		Enabled:    true,
 	}
-	newLine := cron.BuildCronLine(entry)
-	content := strings.TrimRight(existing, "\n")
-	if content != "" {
-		content += "\n"
-	}
-	content += newLine + "\n"
 
-	// Write back using base64 to avoid shell escaping issues with arbitrary content.
-	encoded := base64.StdEncoding.EncodeToString([]byte(content))
-	writeCmd := fmt.Sprintf("echo %s | base64 -d | crontab -", encoded)
-	if _, err := h.executor.Execute(r.Context(), id, writeCmd); err != nil {
+	created, err := h.service.Create(r.Context(), id, entry)
+	if err != nil {
 		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
 		return
 	}
 
-	entry.Raw = newLine
-	writeJSON(w, http.StatusCreated, entry)
+	writeJSON(w, http.StatusCreated, created)
 }
 
 type updateCronRequest struct {
@@ -128,18 +103,6 @@ func (h *cronHandler) updateCron(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
-		return
-	}
-
-	parsed := cron.ParseCrontab(existing)
-	if idx >= len(parsed.Entries) {
-		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
-		return
-	}
-
 	entry := cron.CronEntry{
 		Minute:     req.Minute,
 		Hour:       req.Hour,
@@ -150,16 +113,17 @@ func (h *cronHandler) updateCron(w http.ResponseWriter, r *http.Request) {
 		Enabled:    req.Enabled,
 	}
 
-	newContent := cron.ReplaceCronEntry(existing, idx, &entry)
-	encoded := base64.StdEncoding.EncodeToString([]byte(newContent))
-	writeCmd := fmt.Sprintf("echo %s | base64 -d | crontab -", encoded)
-	if _, err := h.executor.Execute(r.Context(), id, writeCmd); err != nil {
+	updated, err := h.service.Update(r.Context(), id, idx, entry)
+	if err != nil {
+		if errors.Is(err, cron.ErrCronIndexOutOfRange) {
+			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+			return
+		}
 		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
 		return
 	}
 
-	entry.Raw = cron.BuildLine(entry)
-	writeJSON(w, http.StatusOK, entry)
+	writeJSON(w, http.StatusOK, updated)
 }
 
 type runCronResponse struct {
@@ -175,13 +139,12 @@ func (h *cronHandler) runCron(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
+	parsed, err := h.service.List(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
 		return
 	}
 
-	parsed := cron.ParseCrontab(existing)
 	if idx >= len(parsed.Entries) {
 		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
 		return
@@ -205,22 +168,11 @@ func (h *cronHandler) deleteCron(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.executor.Execute(r.Context(), id, "crontab -l 2>/dev/null || true")
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
-		return
-	}
-
-	parsed := cron.ParseCrontab(existing)
-	if idx >= len(parsed.Entries) {
-		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
-		return
-	}
-
-	newContent := cron.ReplaceCronEntry(existing, idx, nil)
-	encoded := base64.StdEncoding.EncodeToString([]byte(newContent))
-	writeCmd := fmt.Sprintf("echo %s | base64 -d | crontab -", encoded)
-	if _, err := h.executor.Execute(r.Context(), id, writeCmd); err != nil {
+	if err := h.service.Delete(r.Context(), id, idx); err != nil {
+		if errors.Is(err, cron.ErrCronIndexOutOfRange) {
+			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+			return
+		}
 		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
 		return
 	}

@@ -13,12 +13,13 @@ import (
 	"testing"
 
 	"belochka/internal/api"
+	"belochka/internal/cron"
 	"belochka/internal/hub"
 )
 
 var errSSHFailed = errors.New("ssh connection refused")
 
-// mockCronExecutor implements api.CronExecutor for testing.
+// mockCronExecutor implements cron.Executor for testing.
 type mockCronExecutor struct {
 	output string
 	err    error
@@ -28,7 +29,7 @@ func (m *mockCronExecutor) Execute(_ context.Context, _, _ string) (string, erro
 	return m.output, m.err
 }
 
-func setupRouterWithCrons(executor api.CronExecutor) http.Handler {
+func setupRouterWithCrons(executor cron.Executor) http.Handler {
 	h := hub.New()
 	return api.NewRouter(h, api.WithCronExecutor(executor))
 }
@@ -585,7 +586,7 @@ func runCronReq(router http.Handler, serverID string, index int) *httptest.Respo
 	return rec
 }
 
-func setupRouterWithRunner(executor api.CronExecutor, runner api.CronRunner) http.Handler {
+func setupRouterWithRunner(executor cron.Executor, runner api.CronRunner) http.Handler {
 	h := hub.New()
 	return api.NewRouter(h, api.WithCronExecutor(executor), api.WithCronRunner(runner))
 }
