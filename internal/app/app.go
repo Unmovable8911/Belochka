@@ -35,6 +35,7 @@ func (sshTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
 // and HTTP server, providing Start/Shutdown lifecycle management.
 type Application struct {
 	cfg             config.Config
+	configStore     *config.Store
 	hub             *hub.Hub
 	store           *store.SQLiteStore
 	pool            *ssh.Pool
@@ -46,9 +47,11 @@ type Application struct {
 }
 
 // New creates a new Application from the given configuration.
+// configPath is the path to the config file used for PATCH /api/config persistence;
+// pass an empty string to disable file persistence (config remains in-memory only).
 // It opens the database and initialises the hub, SSH pool, and
 // collector manager. Returns an error if the database cannot be opened.
-func New(cfg config.Config) (*Application, error) {
+func New(cfg config.Config, configPath string) (*Application, error) {
 	h := hub.New()
 
 	db, err := store.Open(cfg.DataDir, os.Getenv("BELOCHKA_ENCRYPTION_KEY"))
@@ -69,6 +72,7 @@ func New(cfg config.Config) (*Application, error) {
 
 	return &Application{
 		cfg:             cfg,
+		configStore:     config.NewStore(cfg, configPath),
 		hub:             h,
 		store:           db,
 		pool:            pool,
@@ -97,6 +101,7 @@ func (a *Application) Start(ctx context.Context) error {
 	routerOpts = append(routerOpts, api.WithTerminalHandler(a.terminalHandler))
 	routerOpts = append(routerOpts, api.WithCronExecutor(a.pool))
 	routerOpts = append(routerOpts, api.WithCronRunner(a.pool))
+	routerOpts = append(routerOpts, api.WithConfigStore(a.configStore))
 
 	distFS, err := web.DistFS()
 	if err != nil {

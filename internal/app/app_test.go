@@ -17,7 +17,7 @@ func TestApplicationLifecycle(t *testing.T) {
 		DataDir: filepath.Join(t.TempDir(), "data"),
 	}
 
-	a, err := app.New(cfg)
+	a, err := app.New(cfg, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -55,7 +55,7 @@ func main() {
 	handler := slog.NewTextHandler(logWriter, nil)
 	slog.SetDefault(slog.New(handler))
 
-	a, err := app.New(cfg)
+	a, err := app.New(cfg, *configPath)
 	if err != nil {
 		slog.Error("failed to initialize application", "error", err)
 		os.Exit(1)

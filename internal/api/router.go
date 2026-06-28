@@ -24,6 +24,7 @@ type routerConfig struct {
 	terminalHandler *terminal.Handler
 	cronExecutor    cron.Executor
 	cronRunner      CronRunner
+	configStore     ConfigStore
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -76,6 +77,13 @@ func WithCronRunner(runner CronRunner) RouterOption {
 	}
 }
 
+// WithConfigStore enables the GET and PATCH /api/config endpoints.
+func WithConfigStore(store ConfigStore) RouterOption {
+	return func(c *routerConfig) {
+		c.configStore = store
+	}
+}
+
 // NewRouter creates and returns the application HTTP router with all routes mounted.
 func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	var cfg routerConfig
@@ -116,6 +124,13 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 		if cfg.cronRunner != nil {
 			r.Post("/api/servers/{id}/crons/{index}/run", ch.runCron)
 		}
+	}
+
+	// Config endpoints
+	if cfg.configStore != nil {
+		ch := &configHandler{store: cfg.configStore}
+		r.Get("/api/config", ch.getConfig)
+		r.Patch("/api/config", ch.patchConfig)
 	}
 
 	// Mount embedded static file serving if available (production mode).
