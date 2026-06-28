@@ -48,8 +48,8 @@ function hasConnectionFieldChanged(
   original: ServerFormData,
 ): boolean {
   for (const field of CONNECTION_FIELDS) {
-    if (field === "password" || field === "keyPath") {
-      // Non-empty password/key means user changed it
+    if (field === "password") {
+      // Password is never pre-filled; non-empty means the user typed a new one
       if (current[field] !== "") return true
     } else if (current[field] !== original[field]) {
       return true

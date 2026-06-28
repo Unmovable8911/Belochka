@@ -4,7 +4,7 @@ import { WebSocketProvider } from "../components/WebSocketProvider"
 import { ConnectionBanner } from "../components/ConnectionBanner"
 import { StaleDataOverlay } from "../components/StaleDataOverlay"
 import { useMonitorState } from "../hooks/useMonitorState"
-import type { ServerMetrics } from "../hooks/useMonitorState"
+import type { ServerMetrics } from "../types/server"
 
 // --- Mock WebSocket ---
 

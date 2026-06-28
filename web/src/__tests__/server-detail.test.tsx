@@ -6,8 +6,8 @@ import {
   initialMonitorState,
   type MonitorState,
   type MonitorAction,
-  type ServerMetrics,
 } from "../hooks/useMonitorState"
+import type { ServerMetrics } from "../types/server"
 import ServerDetail from "../pages/ServerDetail"
 import type { Dispatch } from "react"
 

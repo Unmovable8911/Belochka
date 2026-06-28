@@ -16,14 +16,21 @@ type Executor interface {
 	Execute(ctx context.Context, serverID, cmd string) (string, error)
 }
 
+// Runner executes a command and returns combined stdout+stderr output and the
+// exit code. Unlike Executor, a non-zero exit code is not an error.
+type Runner interface {
+	RunCommand(ctx context.Context, serverID, cmd string) (output string, exitCode int, err error)
+}
+
 // Service orchestrates reading and writing crontabs on remote servers.
 type Service struct {
 	executor Executor
+	runner   Runner
 }
 
-// NewService creates a Service backed by the given executor.
-func NewService(executor Executor) *Service {
-	return &Service{executor: executor}
+// NewService creates a Service backed by the given executor and runner.
+func NewService(executor Executor, runner Runner) *Service {
+	return &Service{executor: executor, runner: runner}
 }
 
 // readCrontab reads the remote crontab. The "|| true" ensures exit 0 even when
@@ -48,6 +55,20 @@ func (s *Service) List(ctx context.Context, serverID string) (CronResult, error)
 		return CronResult{}, err
 	}
 	return ParseCrontab(output), nil
+}
+
+// Run executes the command of the cron entry at index and returns its combined
+// output and exit code. Returns ErrCronIndexOutOfRange when index is out of
+// range.
+func (s *Service) Run(ctx context.Context, serverID string, index int) (output string, exitCode int, err error) {
+	parsed, err := s.List(ctx, serverID)
+	if err != nil {
+		return "", 0, err
+	}
+	if index >= len(parsed.Entries) {
+		return "", 0, ErrCronIndexOutOfRange
+	}
+	return s.runner.RunCommand(ctx, serverID, parsed.Entries[index].Command)
 }
 
 // Create appends a new (enabled) cron entry and returns the created entry with

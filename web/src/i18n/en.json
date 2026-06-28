@@ -20,6 +20,7 @@
     "network": "Network",
     "processes": "Processes",
     "noProcessData": "No process data available.",
+    "edit": "Edit",
     "delete": "Delete",
     "console": "Console",
     "swap": "Swap"

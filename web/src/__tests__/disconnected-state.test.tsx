@@ -7,9 +7,8 @@ import {
   monitorReducer,
   type MonitorState,
   type MonitorAction,
-  type ServerMetrics,
-  type ServerInfo,
 } from "../hooks/useMonitorState"
+import type { ServerMetrics, ServerInfo } from "../types/server"
 import Dashboard from "../pages/Dashboard"
 import type { Dispatch } from "react"
 

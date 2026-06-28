@@ -23,7 +23,6 @@ type CronRunner interface {
 // cronHandler handles cron endpoints.
 type cronHandler struct {
 	service *cron.Service
-	runner  CronRunner
 }
 
 func (h *cronHandler) listCrons(w http.ResponseWriter, r *http.Request) {
@@ -139,20 +138,12 @@ func (h *cronHandler) runCron(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parsed, err := h.service.List(r.Context(), id)
+	output, exitCode, err := h.service.Run(r.Context(), id, idx)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
-		return
-	}
-
-	if idx >= len(parsed.Entries) {
-		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
-		return
-	}
-
-	entry := parsed.Entries[idx]
-	output, exitCode, err := h.runner.RunCommand(r.Context(), id, entry.Command)
-	if err != nil {
+		if errors.Is(err, cron.ErrCronIndexOutOfRange) {
+			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+			return
+		}
 		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to execute command: "+err.Error())
 		return
 	}

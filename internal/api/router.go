@@ -108,7 +108,7 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 
 	// Cron endpoints
 	if cfg.cronExecutor != nil {
-		ch := &cronHandler{service: cron.NewService(cfg.cronExecutor), runner: cfg.cronRunner}
+		ch := &cronHandler{service: cron.NewService(cfg.cronExecutor, cfg.cronRunner)}
 		r.Get("/api/servers/{id}/crons", ch.listCrons)
 		r.Post("/api/servers/{id}/crons", ch.createCron)
 		r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)

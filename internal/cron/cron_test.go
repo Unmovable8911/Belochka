@@ -1,9 +1,76 @@
 package cron
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 )
+
+// stubExecutor returns a fixed crontab output for List.
+type stubExecutor struct {
+	output string
+	err    error
+}
+
+func (s *stubExecutor) Execute(_ context.Context, _, _ string) (string, error) {
+	return s.output, s.err
+}
+
+// stubRunner records the command it was asked to run and returns a fixed result.
+type stubRunner struct {
+	gotCmd   string
+	output   string
+	exitCode int
+	err      error
+}
+
+func (r *stubRunner) RunCommand(_ context.Context, _, cmd string) (string, int, error) {
+	r.gotCmd = cmd
+	return r.output, r.exitCode, r.err
+}
+
+func TestServiceRun_ValidIndex_RunsEntryCommand(t *testing.T) {
+	exec := &stubExecutor{output: "0 * * * * /usr/bin/hourly.sh\n"}
+	runner := &stubRunner{output: "done\n", exitCode: 0}
+	svc := NewService(exec, runner)
+
+	output, exitCode, err := svc.Run(context.Background(), "srv-1", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if runner.gotCmd != "/usr/bin/hourly.sh" {
+		t.Errorf("expected command /usr/bin/hourly.sh, got %q", runner.gotCmd)
+	}
+	if output != "done\n" || exitCode != 0 {
+		t.Errorf("unexpected result: output=%q exitCode=%d", output, exitCode)
+	}
+}
+
+func TestServiceRun_OutOfRange_ReturnsErr(t *testing.T) {
+	exec := &stubExecutor{output: "0 * * * * /usr/bin/hourly.sh\n"}
+	runner := &stubRunner{}
+	svc := NewService(exec, runner)
+
+	_, _, err := svc.Run(context.Background(), "srv-1", 5)
+	if !errors.Is(err, ErrCronIndexOutOfRange) {
+		t.Fatalf("expected ErrCronIndexOutOfRange, got %v", err)
+	}
+	if runner.gotCmd != "" {
+		t.Errorf("runner should not be called for out-of-range index")
+	}
+}
+
+func TestServiceRun_ReadError_Propagates(t *testing.T) {
+	exec := &stubExecutor{err: errors.New("ssh failed")}
+	runner := &stubRunner{}
+	svc := NewService(exec, runner)
+
+	_, _, err := svc.Run(context.Background(), "srv-1", 0)
+	if err == nil {
+		t.Fatal("expected error from read failure")
+	}
+}
 
 func TestParseCrontab_EnabledEntry(t *testing.T) {
 	output := "0 * * * * /usr/bin/backup.sh"

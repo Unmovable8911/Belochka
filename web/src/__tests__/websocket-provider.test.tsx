@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, act, cleanup } from "@testing-library/react"
 import { WebSocketProvider } from "../components/WebSocketProvider"
 import { useMonitorState } from "../hooks/useMonitorState"
-import type { ServerMetrics } from "../hooks/useMonitorState"
+import type { ServerMetrics } from "../types/server"
 
 // --- Mock WebSocket ---
 

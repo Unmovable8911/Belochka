@@ -20,6 +20,7 @@
     "network": "网络",
     "processes": "进程",
     "noProcessData": "暂无进程数据。",
+    "edit": "编辑",
     "delete": "删除",
     "console": "控制台",
     "swap": "交换空间"

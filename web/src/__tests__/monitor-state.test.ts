@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { monitorReducer, initialMonitorState } from "../hooks/useMonitorState"
-import type { MonitorState, MonitorAction, ServerMetrics } from "../hooks/useMonitorState"
+import type { MonitorState, MonitorAction } from "../hooks/useMonitorState"
+import type { ServerMetrics } from "../types/server"
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {

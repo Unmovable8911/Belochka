@@ -1,13 +1,18 @@
 import { useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Terminal, Trash2 } from "lucide-react"
+import { ArrowLeft, Terminal, Trash2, Pencil } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useMonitorState } from "@/hooks/useMonitorState"
 import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { DeleteServerDialog } from "@/components/DeleteServerDialog"
+import { EditServerDialog } from "@/components/EditServerDialog"
+import { toast } from "sonner"
+import type { Server } from "@/types/server"
+import * as api from "@/api/client"
 import { CronJobsTab } from "@/components/CronJobsTab"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
+import { ThemeToggle } from "@/components/ThemeToggle"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
 import { ProcessTable } from "@/components/ProcessTable"
@@ -20,10 +25,22 @@ export default function ServerDetail() {
   const { state, dispatch } = useMonitorState()
   const navigate = useNavigate()
 
+  const [editOpen, setEditOpen] = useState(false)
+  const [fullServer, setFullServer] = useState<Server | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
 
   const server = state.servers.find((s) => s.id === id)
+
+  async function handleEditClick() {
+    try {
+      const s = await api.getServer(id ?? "")
+      setFullServer(s)
+      setEditOpen(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load server")
+    }
+  }
   const metrics = id ? state.metrics[id] : undefined
 
   if (!server) {
@@ -55,6 +72,15 @@ export default function ServerDetail() {
             variant="default"
             size="sm"
             className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
+            onClick={handleEditClick}
+          >
+            <Pencil className="size-4 mr-1" />
+            {t("serverDetail.edit")}
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
             onClick={() => window.open(`/server/${id}/console`, "_blank")}
           >
             <Terminal className="size-4 mr-1" />
@@ -70,8 +96,20 @@ export default function ServerDetail() {
             {t("serverDetail.delete")}
           </Button>
           <LanguageSwitcher />
+          <ThemeToggle />
         </div>
       </div>
+
+      {fullServer && (
+        <EditServerDialog
+          server={fullServer}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onServerUpdated={(updated) =>
+            dispatch({ type: "update_server", data: { serverId: updated.id, name: updated.name, host: updated.host } })
+          }
+        />
+      )}
 
       <DeleteServerDialog
         server={server}

@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { UsageBar } from "@/components/UsageBar"
 import { formatPercent, formatNetworkSpeed } from "@/lib/format"
-import type { ServerInfo, ServerMetrics, NetworkInterface, DiskPartition } from "@/hooks/useMonitorState"
+import type { ServerInfo, ServerMetrics, NetworkInterface, DiskPartition } from "@/types/server"
 
 interface ServerCardProps {
   server: ServerInfo

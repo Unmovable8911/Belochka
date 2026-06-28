@@ -2,7 +2,7 @@ import { useState, useMemo } from "react"
 import { ArrowUp, ArrowDown } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { formatPercent } from "@/lib/format"
-import type { Process } from "@/hooks/useMonitorState"
+import type { Process } from "@/types/server"
 import {
   Table,
   TableHeader,
