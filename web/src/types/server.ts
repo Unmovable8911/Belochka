@@ -127,3 +127,15 @@ export interface ServerInfo {
   attempts?: number
   lastError?: string
 }
+
+export interface AppConfig {
+  port: number
+  data_dir: string
+  language: string
+  log_path: string
+  log_retention_days: number
+}
+
+export interface PatchConfigResponse extends AppConfig {
+  restart_required?: boolean
+}

@@ -96,6 +96,20 @@
   "language": {
     "label": "Язык"
   },
+  "settings": {
+    "title": "Настройки",
+    "language": "Язык",
+    "logPath": "Путь к журналу",
+    "logPathPlaceholder": "По умолчанию для платформы",
+    "logRetentionDays": "Хранение журнала (дней)",
+    "port": "Порт",
+    "dataDir": "Каталог данных",
+    "save": "Сохранить",
+    "saving": "Сохранение...",
+    "savedSuccess": "Настройки сохранены",
+    "saveFailed": "Не удалось сохранить настройки",
+    "restartRequired": "Для применения этих настроек требуется перезапуск:"
+  },
   "cronJobs": {
     "tabOverview": "Обзор",
     "tabCronJobs": "Задания cron",

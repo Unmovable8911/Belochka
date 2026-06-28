@@ -96,6 +96,20 @@
   "language": {
     "label": "Language"
   },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "logPath": "Log Path",
+    "logPathPlaceholder": "Platform default",
+    "logRetentionDays": "Log Retention (days)",
+    "port": "Port",
+    "dataDir": "Data Directory",
+    "save": "Save",
+    "saving": "Saving...",
+    "savedSuccess": "Settings saved",
+    "saveFailed": "Failed to save settings",
+    "restartRequired": "These settings require a restart to take effect:"
+  },
   "cronJobs": {
     "tabOverview": "Overview",
     "tabCronJobs": "Cron Jobs",

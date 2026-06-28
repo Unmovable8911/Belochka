@@ -96,6 +96,20 @@
   "language": {
     "label": "Langue"
   },
+  "settings": {
+    "title": "Paramètres",
+    "language": "Langue",
+    "logPath": "Chemin des journaux",
+    "logPathPlaceholder": "Défaut de la plateforme",
+    "logRetentionDays": "Rétention des journaux (jours)",
+    "port": "Port",
+    "dataDir": "Répertoire de données",
+    "save": "Enregistrer",
+    "saving": "Enregistrement...",
+    "savedSuccess": "Paramètres enregistrés",
+    "saveFailed": "Échec de l'enregistrement des paramètres",
+    "restartRequired": "Ces paramètres nécessitent un redémarrage pour prendre effet :"
+  },
   "cronJobs": {
     "tabOverview": "Vue d'ensemble",
     "tabCronJobs": "Tâches planifiées",

@@ -96,6 +96,20 @@
   "language": {
     "label": "语言"
   },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "logPath": "日志路径",
+    "logPathPlaceholder": "平台默认",
+    "logRetentionDays": "日志保留天数",
+    "port": "端口",
+    "dataDir": "数据目录",
+    "save": "保存",
+    "saving": "保存中...",
+    "savedSuccess": "设置已保存",
+    "saveFailed": "保存设置失败",
+    "restartRequired": "以下设置需要重启才能生效："
+  },
   "cronJobs": {
     "tabOverview": "概览",
     "tabCronJobs": "定时任务",

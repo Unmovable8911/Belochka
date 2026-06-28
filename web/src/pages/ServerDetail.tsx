@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import type { Server } from "@/types/server"
 import * as api from "@/api/client"
 import { CronJobsTab } from "@/components/CronJobsTab"
-import { LanguageSwitcher } from "@/components/LanguageSwitcher"
+import { SettingsDialog } from "@/components/SettingsDialog"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
@@ -95,7 +95,7 @@ export default function ServerDetail() {
             <Trash2 className="size-4 mr-1" />
             {t("serverDetail.delete")}
           </Button>
-          <LanguageSwitcher />
+          <SettingsDialog />
           <ThemeToggle />
         </div>
       </div>
