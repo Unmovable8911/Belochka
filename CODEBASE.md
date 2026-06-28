@@ -26,7 +26,7 @@ internal/static/     — SPA file server with index.html fallback
 internal/terminal/   — Web terminal: WebSocket-SSH bridge with PTY, resize, session lifecycle
 web/                 — React frontend (Vite build), embedded into Go binary via embed.go
 web/src/pages/       — Dashboard, ServerDetail, and Console (web terminal) pages
-web/src/components/  — UI components: ServerCard, AddServerDialog, AddCronDialog, WebSocketProvider, Layout, LanguageSwitcher, RingGauge, etc.
+web/src/components/  — UI components: ServerCard, AddServerDialog, AddCronDialog, WebSocketProvider, Layout, SettingsDialog, RingGauge, etc.
 web/src/hooks/       — useMonitorState: WebSocket message state management
 web/src/api/         — REST API client (client.ts)
 web/src/types/       — Single home for frontend wire/domain types: server/cron REST shapes plus the WebSocket metric domain types (CPU/Memory/Disk/Network/Process/System, ServerMetrics, ServerInfo); imported by hooks and components alike
@@ -49,22 +49,22 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `Icon []byte`
 
 ### internal/logging
-- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). Retention cleanup runs once at construction and at most hourly on `Write` (off the hot path): if the first log line predates the retention window, the file is rewritten dropping expired lines (uses `bufio.Reader`, so no line-length cap; an unparseable first line falls through to a full scan instead of disabling cleanup). Default retention: 3 days; overridden by `BELOCHKA_LOG_RETENTION_DAYS` env var.
+- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). Retention cleanup runs once at construction and at most hourly on `Write` (off the hot path): if the first log line predates the retention window, the file is rewritten dropping expired lines (uses `bufio.Reader`, so no line-length cap; an unparseable first line falls through to a full scan instead of disabling cleanup). Retention is passed as a parameter (from `cfg.LogRetentionDays`); the `BELOCHKA_LOG_RETENTION_DAYS` env var was removed.
 - **Key Files**: `internal/logging/logger.go`
 - **Dependencies**: none
-- **Exposes**: `Logger` struct, `New(path string, tee bool) (*Logger, error)`
+- **Exposes**: `Logger` struct, `New(path string, tee bool, retention time.Duration) (*Logger, error)`
 
 ### internal/app
-- **Purpose**: Top-level application container. Wires hub, store, SSH pool, collector manager, terminal handler, and HTTP server. Manages lifecycle (Start/Shutdown) and periodic metric broadcast loop (2s interval).
+- **Purpose**: Top-level application container. Wires hub, store, SSH pool, collector manager, terminal handler, config store, and HTTP server. Manages lifecycle (Start/Shutdown) and periodic metric broadcast loop (2s interval). Reads `BELOCHKA_ENCRYPTION_KEY` from env directly for SQLite encryption.
 - **Key Files**: `internal/app/app.go`
-- **Dependencies**: api, broadcast, config, hub, model, monitor, shutdown, ssh, store, terminal, web (wires `pool` as `CronExecutor` and `CronRunner`)
-- **Exposes**: `Application` struct with `New()`, `Start()`, `Shutdown()`, `Addr()`
+- **Dependencies**: api, broadcast, config, hub, model, monitor, shutdown, ssh, store, terminal, web (wires `pool` as `CronExecutor` and `CronRunner`; wires `configStore` as `ConfigStore` and `LangStore`)
+- **Exposes**: `Application` struct with `New(cfg *config.Config, configPath string)`, `Start()`, `Shutdown()`, `Addr()`
 
 ### internal/api
-- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, a stateless connection-test endpoint, health check, WebSocket upgrade, terminal WebSocket endpoint, cron CRUD endpoints, and static file serving. Cron handlers delegate the entire crontab read-modify-write **and run-by-index** workflow to `cron.Service` (constructed in `NewRouter` from the injected `cron.Executor` and `CronRunner`); they only parse requests and map `cron.ErrCronIndexOutOfRange` → 404 and SSH errors → 502 (`runCron` calls `Service.Run`, carrying no index-bounds or entry-resolution logic).
-- **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`, `internal/api/cron_handler.go`
-- **Dependencies**: hub, model, ssh, static, terminal, cron
-- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalHandler`, `WithCronExecutor`, `WithCronRunner`); `ServerStore`, `SSHTester`, `CronRunner` interfaces (`WithCronExecutor` accepts a `cron.Executor`). Routes: `GET/POST /api/servers/{id}/crons`, `PUT/DELETE /api/servers/{id}/crons/{index}`, `POST /api/servers/{id}/crons/{index}/run`.
+- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, a stateless connection-test endpoint, health check, WebSocket upgrade, terminal WebSocket endpoint, cron CRUD endpoints, config GET/PATCH endpoint, and static file serving. Cron handlers delegate the entire crontab read-modify-write **and run-by-index** workflow to `cron.Service`. Config handler delegates to injected `ConfigStore` (satisfied by `config.Store`). Language store is threaded to `static.NewHandler` via `WithLangStore`.
+- **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`, `internal/api/cron_handler.go`, `internal/api/config_handler.go`
+- **Dependencies**: hub, model, ssh, static, terminal, cron, config
+- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalHandler`, `WithCronExecutor`, `WithCronRunner`, `WithConfigStore`, `WithLangStore`); `ServerStore`, `SSHTester`, `CronRunner`, `ConfigStore`, `LangStore` interfaces. Routes: `GET/POST /api/servers/{id}/crons`, `PUT/DELETE /api/servers/{id}/crons/{index}`, `POST /api/servers/{id}/crons/{index}/run`, `GET /api/config`, `PATCH /api/config`.
 
 ### internal/cron
 - **Purpose**: Crontab parsing/building plus the read-modify-write orchestration over SSH. `cron.go` parses crontab output into enabled/disabled entries and passthrough lines (comments, env vars), builds lines with the `#[disabled] ` prefix convention, and provides `ReplaceCronEntry` for in-place replacement/deletion by zero-based index. `service.go` holds a `Service` that reads (`crontab -l 2>/dev/null || true`) and writes (base64 → `crontab -`) the remote crontab, encapsulating the full List/Create/Update/Delete/**Run** workflow so the API layer carries no shell/base64/index-resolution details. `Service.Run` resolves an entry by index (returning `ErrCronIndexOutOfRange` when out of range) and executes its command via the injected `Runner`.
@@ -109,10 +109,10 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot`, `CPUUsage`, `NetworkRate`; `ErrServerNotFound` sentinel error (wrapped by `store`, matched via `errors.Is` in `api`)
 
 ### internal/config
-- **Purpose**: Loads YAML config file (default `belochka.yaml`), falls back to built-in defaults (port 53136, data dir `./data`). `BELOCHKA_ENCRYPTION_KEY` env var overrides file value.
-- **Key Files**: `internal/config/config.go`
-- **Dependencies**: gopkg.in/yaml.v3
-- **Exposes**: `Config` struct, `Load()` function
+- **Purpose**: Loads JSON config file (default `config.json`), falls back to built-in defaults (port 53136, data dir `./data`). `BELOCHKA_ENCRYPTION_KEY` env var is read directly in `app.go`, not stored in Config. `Store` wraps Config with a mutex and provides atomic file writes and thread-safe `Language()`/`SetLanguage()` accessors used by `static` and `api`.
+- **Key Files**: `internal/config/config.go` (Config struct + Load), `internal/config/store.go` (Store, atomic JSON write, Language/SetLanguage)
+- **Dependencies**: none (YAML dependency removed)
+- **Exposes**: `Config` struct (fields: `Port`, `DataDir`, `LogPath`, `Language`, `LogRetentionDays`), `Load()` function; `Store` struct with `New()`, `Get()`, `Patch()`, `Language()`, `SetLanguage()`
 
 ### internal/clock
 - **Purpose**: Abstraction over `time.Now()`, `time.NewTicker()`, and context-aware `Sleep()` for deterministic testing.
@@ -133,40 +133,40 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `Handler` (ServeHTTP/CloseAll), `Session` interface, `SessionOpener` interface, `SSHSessionOpener` adapter, `ServerNotFoundError`
 
 ### internal/static
-- **Purpose**: Serves embedded frontend assets with SPA fallback (unknown paths serve index.html). Returns nil handler when no FS is provided (dev mode).
+- **Purpose**: Serves embedded frontend assets with SPA fallback (unknown paths serve index.html). On every index.html response, injects the active language into `<meta name="app-lang" content="">`. On first visit (empty language in store), detects preferred language from the `Accept-Language` header (supports en/zh/fr/ru, falls back to `"en"`), persists it via `LangStore.SetLanguage()`, then injects it. Returns nil handler when no FS is provided (dev mode).
 - **Key Files**: `internal/static/handler.go`
-- **Dependencies**: none
-- **Exposes**: `NewHandler()` function
+- **Dependencies**: config (via `LangStore` interface)
+- **Exposes**: `LangStore` interface (Language/SetLanguage); `NewHandler(fs, langStore) http.Handler`
 
 ### web (frontend)
 - **Purpose**: React SPA dashboard. Three routes: `/` (Dashboard — server card grid with connection status and summary metrics), `/server/:id` (ServerDetail — detailed CPU, memory, disk, network, process views, and Cron Jobs tab with full CRUD + run-now), and `/server/:id/console` (Console — full-page web terminal via xterm.js + WebSocket). Dashboard and detail routes use the shared Layout/WebSocketProvider; console route is standalone. Internationalized with react-i18next supporting English, Chinese (Simplified), French, and Russian.
-- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx` (tabbed: Overview / Cron Jobs — header row has Edit / Console / Delete buttons; Edit fetches full `Server` via `GET /api/servers/:id`, opens `EditServerDialog`, dispatches `update_server` on save; overview renders inline, cron tab delegates to `CronJobsTab`), `web/src/pages/Console.tsx` (web terminal page), `web/src/components/CronJobsTab.tsx` (cron tab UI: table, toggle, run/edit/delete, confirm + run-output dialogs; driven by `useCrons`), `web/src/components/AddServerDialog.tsx` + `web/src/components/EditServerDialog.tsx` (each owns its form data + change-detection, both share the connection-test/fingerprint/save state machine via `useServerForm` and render the shared `ServerForm`), `web/src/components/ServerForm.tsx` (controlled presentational form fields + fingerprint trust block, parameterized by `idPrefix`), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/LanguageSwitcher.tsx`, `web/src/components/AddCronDialog.tsx` (add/edit cron dialog, reused via `editEntry`/`editIndex` props), `web/src/i18n/index.ts` (i18n config), `web/src/i18n/en.json` (English translations, reference for all languages), `web/src/hooks/useMonitorState.ts` (state/reducer/actions/context only; metric domain types now imported from `web/src/types/server.ts`), `web/src/hooks/useCrons.ts` (cron fetch + mutation logic: lazy fetch, optimistic toggle w/ revert, row-error index shifting), `web/src/hooks/useServerForm.ts` (shared connection-test/fingerprint/save state machine for Add/Edit dialogs), `web/src/api/client.ts`, `web/embed.go` (Go embed)
-- **Dependencies**: React 19, react-router-dom, Radix UI, Tailwind CSS, Lucide icons, sonner (toasts), i18next, react-i18next, i18next-browser-languagedetector, @xterm/xterm, @xterm/addon-fit
+- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx` (tabbed: Overview / Cron Jobs — header row has Edit / Console / Delete / Settings buttons; Edit fetches full `Server` via `GET /api/servers/:id`, opens `EditServerDialog`, dispatches `update_server` on save; overview renders inline, cron tab delegates to `CronJobsTab`), `web/src/pages/Console.tsx` (web terminal page), `web/src/components/CronJobsTab.tsx` (cron tab UI: table, toggle, run/edit/delete, confirm + run-output dialogs; driven by `useCrons`), `web/src/components/AddServerDialog.tsx` + `web/src/components/EditServerDialog.tsx` (each owns its form data + change-detection, both share the connection-test/fingerprint/save state machine via `useServerForm` and render the shared `ServerForm`), `web/src/components/ServerForm.tsx` (controlled presentational form fields + fingerprint trust block, parameterized by `idPrefix`), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/SettingsDialog.tsx` (gear icon trigger; 5-field form: port, data_dir, language, log_path, log_retention_days; diff-only PATCH, restart-required notice, calls `i18n.changeLanguage` on language save), `web/src/components/AddCronDialog.tsx` (add/edit cron dialog, reused via `editEntry`/`editIndex` props), `web/src/i18n/index.ts` (i18n config; reads language from `<meta name="app-lang">` injected by server, no browser detector), `web/src/i18n/en.json` (English translations, reference for all languages; includes `settings` section), `web/src/hooks/useMonitorState.ts` (state/reducer/actions/context only; metric domain types now imported from `web/src/types/server.ts`), `web/src/hooks/useCrons.ts` (cron fetch + mutation logic: lazy fetch, optimistic toggle w/ revert, row-error index shifting), `web/src/hooks/useServerForm.ts` (shared connection-test/fingerprint/save state machine for Add/Edit dialogs), `web/src/api/client.ts` (includes `getConfig()` and `patchConfig()`), `web/src/types/server.ts` (includes `AppConfig` and `PatchConfigResponse`), `web/index.html` (`<meta name="app-lang" content="">` placeholder for server injection), `web/embed.go` (Go embed)
+- **Dependencies**: React 19, react-router-dom, Radix UI, Tailwind CSS, Lucide icons, sonner (toasts), i18next, react-i18next, @xterm/xterm, @xterm/addon-fit
 - **Exposes**: Embedded filesystem via `web.DistFS()` consumed by Go backend
 
 ## Data Flow
-1. **Config load**: `cmd/server/main.go` reads `belochka.yaml` (or defaults) via `config.Load()`.
-2. **App init**: `app.New()` opens SQLite store, creates Hub, SSH Pool (backed by store as ServerProvider), and Monitor Manager (backed by pool as SSHExecutor).
+1. **Config load**: `cmd/server/main.go` reads `config.json` (or defaults) via `config.Load()`, then creates a `config.Store` wrapping it. Log path and retention are derived from config fields.
+2. **App init**: `app.New(cfg, configPath)` opens SQLite store (reads `BELOCHKA_ENCRYPTION_KEY` from env), creates Hub, SSH Pool (backed by store as ServerProvider), Monitor Manager (backed by pool as SSHExecutor), and `config.Store` (passed to router as `ConfigStore` and `LangStore`).
 3. **Server sync**: On start and after any CRUD operation, `syncServers()` reconciles Pool and Manager with the current server list from the store.
 4. **SSH connections**: Pool maintains a persistent SSH connection per server with automatic reconnection (exponential backoff) and keepalive pings.
 5. **Metric collection**: Each server's Collector runs a 2s loop: executes a combined shell command over SSH → parses /proc output → computes CPU/network deltas from previous reading → stores latest Snapshot.
 6. **Broadcast loop**: Every 2s, `broadcastAll()` gathers all server states from Pool and latest Snapshots from Manager, assembles them into JSON via `broadcast.Assemble()`, and pushes to all WebSocket clients via Hub.
 7. **WebSocket delivery**: Hub fans out the `{"type":"snapshot","data":...}` envelope to all connected browser clients. New clients receive the cached snapshot immediately on connect.
-8. **Frontend rendering**: `WebSocketProvider` receives messages → `useMonitorState` hook updates React state → Dashboard/ServerDetail re-render with fresh metrics. All UI strings resolve through `react-i18next` `t()` calls against the active language's translation file.
+8. **Frontend rendering**: `WebSocketProvider` receives messages → `useMonitorState` hook updates React state → Dashboard/ServerDetail re-render with fresh metrics. All UI strings resolve through `react-i18next` `t()` calls against the active language's translation file. Language is bootstrapped from `<meta name="app-lang">` injected by the server (not from localStorage or browser navigator).
+8a. **Language detection**: On first visit (no language saved), `static.Handler` reads `Accept-Language`, picks the best supported language (en/zh/fr/ru), saves it via `config.Store.SetLanguage()`, and injects it into the meta tag. Subsequent visits inject the saved value directly.
+8b. **Settings**: `GET /api/config` returns all config fields; `PATCH /api/config` accepts a partial body (only changed fields), writes atomically to `config.json`, and returns `restart_required: true` for changes that require a server restart (port, data_dir). Language changes are applied live via `i18n.changeLanguage()` without a restart.
 9. **Server CRUD**: REST API (`POST/GET/PUT/DELETE /api/servers`) persists to SQLite, then triggers `onServerChange` callback which re-syncs SSH pool and broadcasts updated state.
 10. **Terminal session**: Browser opens WebSocket to `/api/ws/terminal/{serverID}` → terminal Handler calls `SessionOpener.OpenSession()` to get an SSH session from Pool → requests PTY (xterm-256color) → starts shell → bridges stdin/stdout bidirectionally as binary WebSocket frames. Resize control messages (JSON text frames) trigger `WindowChange`. On SSH EOF or WebSocket close, session is cleaned up.
 11. **Connection test**: `POST /api/servers/test` accepts a full server config in the request body and runs `ssh.TestConnection` without persisting anything (no DB writes, no pool sync). When the password is omitted but an `id` is supplied, the stored secret is read (read-only) and reused. The Add/Edit dialogs test against in-memory form data and persist only on Save, so cancelling never leaves orphaned server records.
 12. **Cron management**: The cron handlers delegate to `cron.Service`, which performs the SSH read-modify-write. `GET /api/servers/{id}/crons` → `Service.List` (`crontab -l` → `ParseCrontab` → JSON). `POST` → `Service.Create` (append line, write back via `echo <base64> | base64 -d | crontab -`). `PUT /{index}` → `Service.Update` (`ReplaceCronEntry` in place); `DELETE /{index}` → `Service.Delete`; out-of-range index returns `ErrCronIndexOutOfRange` → HTTP 404. `POST /{index}/run` delegates to `Service.Run`, which resolves the entry by index (out-of-range → `ErrCronIndexOutOfRange` → HTTP 404) and executes the command via the injected `Runner` (`pool.RunCommand`), returning `{exitCode, output}`; non-zero exit codes are returned as data, not HTTP errors.
 
 ## External Dependencies
-- **i18next / react-i18next**: Frontend internationalization framework with React bindings; language auto-detected from browser, persisted in localStorage, switchable via UI
-- **i18next-browser-languagedetector**: Automatic language detection from localStorage and navigator
+- **i18next / react-i18next**: Frontend internationalization framework with React bindings; language bootstrapped from server-injected `<meta name="app-lang">`, switchable via SettingsDialog which PATCHes `/api/config`
 - **gorilla/websocket**: WebSocket server implementation for real-time metric streaming
 - **go-chi/chi**: HTTP router with path parameter support
 - **modernc.org/sqlite**: Pure-Go SQLite driver (no CGo required)
 - **golang.org/x/crypto/ssh**: SSH client connections, key parsing, keepalive
 - **google/uuid**: Server ID generation
-- **gopkg.in/yaml.v3**: Configuration file parsing
 - **@xterm/xterm + @xterm/addon-fit**: Terminal emulator for the web console page; fit addon auto-sizes to container
 - **Radix UI**: Accessible headless UI primitives (dialogs, buttons, etc.)
 - **react-router-dom**: Client-side routing for SPA
