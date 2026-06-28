@@ -13,11 +13,16 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// LangStore is the subset of config.Store needed by the static handler.
+// Aliased here so callers don't need to import internal/static directly.
+type LangStore = static.LangStore
+
 // RouterOption configures the router.
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
 	staticFS        fs.FS
+	langStore       static.LangStore
 	serverStore     ServerStore
 	sshTester       SSHTester
 	onServerChange  func()
@@ -32,6 +37,14 @@ type routerConfig struct {
 func WithStaticFS(fsys fs.FS) RouterOption {
 	return func(c *routerConfig) {
 		c.staticFS = fsys
+	}
+}
+
+// WithLangStore sets the language store used by the static handler for
+// Accept-Language detection and meta tag injection.
+func WithLangStore(store static.LangStore) RouterOption {
+	return func(c *routerConfig) {
+		c.langStore = store
 	}
 }
 
@@ -134,7 +147,7 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 	}
 
 	// Mount embedded static file serving if available (production mode).
-	if handler := static.NewHandler(cfg.staticFS); handler != nil {
+	if handler := static.NewHandler(cfg.staticFS, cfg.langStore); handler != nil {
 		r.NotFound(handler.ServeHTTP)
 	}
 

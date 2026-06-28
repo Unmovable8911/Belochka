@@ -102,6 +102,7 @@ func (a *Application) Start(ctx context.Context) error {
 	routerOpts = append(routerOpts, api.WithCronExecutor(a.pool))
 	routerOpts = append(routerOpts, api.WithCronRunner(a.pool))
 	routerOpts = append(routerOpts, api.WithConfigStore(a.configStore))
+	routerOpts = append(routerOpts, api.WithLangStore(a.configStore))
 
 	distFS, err := web.DistFS()
 	if err != nil {

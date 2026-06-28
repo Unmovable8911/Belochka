@@ -42,6 +42,25 @@ func (s *Store) Set(cfg Config) error {
 	return nil
 }
 
+// Language returns the current language setting.
+func (s *Store) Language() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.Language
+}
+
+// SetLanguage updates the language field in the config, persisting to disk
+// when a path is configured.
+func (s *Store) SetLanguage(lang string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Language = lang
+	if s.path != "" {
+		return atomicWriteConfig(s.path, s.cfg)
+	}
+	return nil
+}
+
 // atomicWriteConfig marshals cfg to JSON and writes it to path via a
 // temp-file + rename so the update is atomic on POSIX systems.
 func atomicWriteConfig(path string, cfg Config) error {

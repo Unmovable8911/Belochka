@@ -16,7 +16,6 @@ function renderSwitcher() {
 describe("Language Switcher", () => {
   beforeEach(() => {
     i18n.changeLanguage("en")
-    localStorage.clear()
   })
 
   afterEach(() => {
@@ -58,18 +57,4 @@ describe("Language Switcher", () => {
 
     expect(i18n.language).toBe("zh")
   })
-
-  it("persists language choice in localStorage", async () => {
-    const user = userEvent.setup()
-    renderSwitcher()
-
-    const trigger = screen.getByTestId("language-switcher")
-    await user.click(trigger)
-
-    const frOption = screen.getByRole("option", { name: "Français" })
-    await user.click(frOption)
-
-    expect(localStorage.getItem("i18nextLng")).toBe("fr")
-  })
-
 })
