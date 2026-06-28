@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"belochka/internal/api"
@@ -50,7 +51,7 @@ type Application struct {
 func New(cfg config.Config) (*Application, error) {
 	h := hub.New()
 
-	db, err := store.Open(cfg.DataDir, cfg.EncryptionKey)
+	db, err := store.Open(cfg.DataDir, os.Getenv("BELOCHKA_ENCRYPTION_KEY"))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

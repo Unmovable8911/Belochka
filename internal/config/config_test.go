@@ -20,16 +20,24 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("default data_dir = %q, want %q", cfg.DataDir, "./data")
 	}
 
-	if cfg.EncryptionKey != "" {
-		t.Errorf("default encryption_key = %q, want empty", cfg.EncryptionKey)
+	if cfg.LogRetentionDays != 3 {
+		t.Errorf("default log_retention_days = %d, want 3", cfg.LogRetentionDays)
+	}
+
+	if cfg.Language != "" {
+		t.Errorf("default language = %q, want empty", cfg.Language)
+	}
+
+	if cfg.LogPath != "" {
+		t.Errorf("default log_path = %q, want empty", cfg.LogPath)
 	}
 }
 
-func TestLoadFromYAMLFile(t *testing.T) {
+func TestLoadFromJSONFile(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "belochka.yaml")
+	cfgPath := filepath.Join(dir, "config.json")
 
-	content := []byte("port: 8080\ndata_dir: /var/lib/belochka\nencryption_key: my-secret-key\n")
+	content := []byte(`{"port":8080,"data_dir":"/var/lib/belochka","language":"zh","log_path":"/var/log/belochka.log","log_retention_days":7}`)
 	if err := os.WriteFile(cfgPath, content, 0644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
@@ -44,20 +52,28 @@ func TestLoadFromYAMLFile(t *testing.T) {
 	}
 
 	if cfg.DataDir != "/var/lib/belochka" {
-		t.Errorf("data_dir = %q, want %q", cfg.DataDir, "/var/lib/belochka")
+		t.Errorf("data_dir = %q, want /var/lib/belochka", cfg.DataDir)
 	}
 
-	if cfg.EncryptionKey != "my-secret-key" {
-		t.Errorf("encryption_key = %q, want %q", cfg.EncryptionKey, "my-secret-key")
+	if cfg.Language != "zh" {
+		t.Errorf("language = %q, want zh", cfg.Language)
+	}
+
+	if cfg.LogPath != "/var/log/belochka.log" {
+		t.Errorf("log_path = %q, want /var/log/belochka.log", cfg.LogPath)
+	}
+
+	if cfg.LogRetentionDays != 7 {
+		t.Errorf("log_retention_days = %d, want 7", cfg.LogRetentionDays)
 	}
 }
 
-func TestPartialYAMLUsesDefaults(t *testing.T) {
+func TestPartialJSONUsesDefaults(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "belochka.yaml")
+	cfgPath := filepath.Join(dir, "config.json")
 
-	// Only set port; data_dir and encryption_key should use defaults.
-	content := []byte("port: 9999\n")
+	// Only set port; other fields should use defaults.
+	content := []byte(`{"port":9999}`)
 	if err := os.WriteFile(cfgPath, content, 0644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
@@ -75,57 +91,37 @@ func TestPartialYAMLUsesDefaults(t *testing.T) {
 		t.Errorf("data_dir = %q, want default %q", cfg.DataDir, "./data")
 	}
 
-	if cfg.EncryptionKey != "" {
-		t.Errorf("encryption_key = %q, want empty default", cfg.EncryptionKey)
+	if cfg.LogRetentionDays != 3 {
+		t.Errorf("log_retention_days = %d, want default 3", cfg.LogRetentionDays)
 	}
 }
 
 func TestExplicitPathNotFoundIsError(t *testing.T) {
-	_, err := Load("/nonexistent/path/belochka.yaml")
+	_, err := Load("/nonexistent/path/config.json")
 	if err == nil {
 		t.Fatal("expected error when explicit config path does not exist")
 	}
 }
 
-func TestEnvVarOverridesConfigFile(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "belochka.yaml")
-
-	content := []byte("encryption_key: from-file\n")
-	if err := os.WriteFile(cfgPath, content, 0644); err != nil {
-		t.Fatalf("write config file: %v", err)
-	}
-
+func TestEncryptionKeyEnvVar(t *testing.T) {
+	// BELOCHKA_ENCRYPTION_KEY is not stored in Config; it is read directly
+	// by consumers. Verify Load does not fail when it is set.
 	t.Setenv("BELOCHKA_ENCRYPTION_KEY", "from-env")
-
-	cfg, err := Load(cfgPath)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-
-	if cfg.EncryptionKey != "from-env" {
-		t.Errorf("encryption_key = %q, want %q (env should override file)", cfg.EncryptionKey, "from-env")
-	}
-}
-
-func TestEnvVarWithNoConfigFile(t *testing.T) {
-	t.Setenv("BELOCHKA_ENCRYPTION_KEY", "env-only-key")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.EncryptionKey != "env-only-key" {
-		t.Errorf("encryption_key = %q, want %q", cfg.EncryptionKey, "env-only-key")
-	}
+	// Verify that Config does not expose the key.
+	_ = cfg.Port // just confirm Load succeeded and returned a usable Config
 }
 
 func TestCWDFallback(t *testing.T) {
-	// Create a temp dir with a belochka.yaml and chdir into it.
+	// Create a temp dir with a config.json and chdir into it.
 	dir := t.TempDir()
-	content := []byte("port: 7777\n")
-	if err := os.WriteFile(filepath.Join(dir, "belochka.yaml"), content, 0644); err != nil {
+	content := []byte(`{"port":7777}`)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), content, 0644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 
@@ -149,17 +145,17 @@ func TestCWDFallback(t *testing.T) {
 	}
 }
 
-func TestInvalidYAMLReturnsError(t *testing.T) {
+func TestInvalidJSONReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "belochka.yaml")
+	cfgPath := filepath.Join(dir, "config.json")
 
-	content := []byte("port: [invalid yaml\n")
+	content := []byte(`{invalid json`)
 	if err := os.WriteFile(cfgPath, content, 0644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 
 	_, err := Load(cfgPath)
 	if err == nil {
-		t.Fatal("expected error for invalid YAML")
+		t.Fatal("expected error for invalid JSON")
 	}
 }

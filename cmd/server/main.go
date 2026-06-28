@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"belochka/internal/app"
 	"belochka/internal/config"
@@ -29,9 +30,23 @@ func main() {
 		return
 	}
 
+	// Load config before anything else; errors go to stderr.
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
 	trayMode := hasDesktop() && !*noTray
 
-	logWriter, err := logging.New(logFilePath(), !trayMode)
+	logPath := cfg.LogPath
+	if logPath == "" {
+		logPath = logFilePath()
+	}
+
+	retention := time.Duration(cfg.LogRetentionDays) * 24 * time.Hour
+
+	logWriter, err := logging.New(logPath, !trayMode, retention)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open log file: %v\n", err)
 		os.Exit(1)
@@ -39,12 +54,6 @@ func main() {
 
 	handler := slog.NewTextHandler(logWriter, nil)
 	slog.SetDefault(slog.New(handler))
-
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		slog.Error("failed to load configuration", "error", err)
-		os.Exit(1)
-	}
 
 	a, err := app.New(cfg)
 	if err != nil {

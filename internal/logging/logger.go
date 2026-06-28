@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
-
-const defaultRetentionDays = 3
 
 // purgeInterval bounds how often retention cleanup runs, keeping it off the
 // per-write hot path. A long-running process is still trimmed periodically.
@@ -27,12 +24,13 @@ type Logger struct {
 
 // New opens (or creates) the log file at path.
 // If tee is true, writes also go to os.Stdout.
-func New(path string, tee bool) (*Logger, error) {
-	return open(path, tee, os.Stdout)
+// retention controls how long log lines are kept before being purged.
+func New(path string, tee bool, retention time.Duration) (*Logger, error) {
+	return open(path, tee, os.Stdout, retention)
 }
 
-// open is the internal constructor; out receives the secondary writer for tee mode.
-func open(path string, tee bool, stdout io.Writer) (*Logger, error) {
+// open is the internal constructor; stdout receives the secondary writer for tee mode.
+func open(path string, tee bool, stdout io.Writer, retention time.Duration) (*Logger, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
@@ -41,7 +39,7 @@ func open(path string, tee bool, stdout io.Writer) (*Logger, error) {
 	if tee && stdout != nil {
 		out = io.MultiWriter(f, stdout)
 	}
-	l := &Logger{file: f, out: out, retention: retentionFromEnv()}
+	l := &Logger{file: f, out: out, retention: retention}
 	// Trim a stale file at startup; subsequent trims happen at most hourly.
 	if err := l.purgeIfStale(); err != nil {
 		return nil, err
@@ -137,16 +135,4 @@ func parseLogTime(line string) (time.Time, error) {
 		end = len(rest)
 	}
 	return time.Parse(time.RFC3339Nano, rest[:end])
-}
-
-func retentionFromEnv() time.Duration {
-	s := os.Getenv("BELOCHKA_LOG_RETENTION_DAYS")
-	if s == "" {
-		return defaultRetentionDays * 24 * time.Hour
-	}
-	days, err := strconv.Atoi(s)
-	if err != nil || days <= 0 {
-		return defaultRetentionDays * 24 * time.Hour
-	}
-	return time.Duration(days) * 24 * time.Hour
 }
