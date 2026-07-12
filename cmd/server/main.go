@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"belochka/internal/app"
 	"belochka/internal/config"
@@ -17,6 +19,22 @@ import (
 )
 
 var version = "dev"
+
+// baseDir returns the directory of the running binary. When the binary is
+// run via "go run" (detected by a /tmp/go-build prefix) or os.Executable
+// fails, it returns an empty string — signalling callers to fall back to
+// the current working directory.
+func baseDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(exe)
+	if strings.HasPrefix(dir, "/tmp/go-build") {
+		return ""
+	}
+	return dir
+}
 
 func main() {
 	configPath := flag.String("config", "", "path to configuration file")
@@ -29,9 +47,29 @@ func main() {
 		return
 	}
 
+	base := baseDir()
+
+	// Load config before anything else; errors go to stderr.
+	cfg, err := config.Load(*configPath, base)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	resolvedConfigPath := config.ConfigFilePath(*configPath, base)
+
 	trayMode := hasDesktop() && !*noTray
 
-	logWriter, err := logging.New(logFilePath(), !trayMode)
+	logPath := cfg.LogPath
+	if logPath == "" {
+		logPath = config.LogFilePath(base)
+	} else {
+		logPath = config.ResolvePath(logPath, base)
+	}
+
+	retention := time.Duration(cfg.LogRetentionDays) * 24 * time.Hour
+
+	logWriter, err := logging.New(logPath, !trayMode, retention)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open log file: %v\n", err)
 		os.Exit(1)
@@ -40,13 +78,7 @@ func main() {
 	handler := slog.NewTextHandler(logWriter, nil)
 	slog.SetDefault(slog.New(handler))
 
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		slog.Error("failed to load configuration", "error", err)
-		os.Exit(1)
-	}
-
-	a, err := app.New(cfg)
+	a, err := app.New(cfg, resolvedConfigPath, base)
 	if err != nil {
 		slog.Error("failed to initialize application", "error", err)
 		os.Exit(1)
@@ -80,18 +112,3 @@ func main() {
 	slog.Info("server stopped")
 }
 
-// logFilePath returns an absolute, writable path for the log file. In tray mode
-// the process is launched from a desktop shell with an unpredictable (often
-// unwritable) working directory, so a relative path is not safe. Falls back to
-// the working directory if the user cache directory cannot be resolved.
-func logFilePath() string {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return "belochka.log"
-	}
-	dir := filepath.Join(cacheDir, "belochka")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "belochka.log"
-	}
-	return filepath.Join(dir, "belochka.log")
-}

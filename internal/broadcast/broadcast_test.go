@@ -18,9 +18,9 @@ func TestAssemble_WithSnapshot(t *testing.T) {
 	}
 
 	snap := &model.Snapshot{
-		ServerID: "srv1",
-		CPU: []model.CPUUsage{
-			{Name: "cpu", UsedPct: 45.2},
+		ServerID:     "srv1",
+		AggregateCPU: &model.CPUUsage{Name: "cpu", UsedPct: 45.2},
+		Cores: []model.CPUUsage{
 			{Name: "cpu0", UsedPct: 50.0},
 		},
 		Memory: model.MemoryMetrics{

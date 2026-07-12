@@ -279,10 +279,10 @@ func TestBuildCronLine(t *testing.T) {
 		DayOfWeek:  "1",
 		Command:    "/usr/bin/weekly.sh arg1 arg2",
 	}
-	got := BuildCronLine(entry)
+	got := buildCronLine(entry)
 	want := "0 2 * * 1 /usr/bin/weekly.sh arg1 arg2"
 	if got != want {
-		t.Errorf("BuildCronLine() = %q, want %q", got, want)
+		t.Errorf("buildCronLine() = %q, want %q", got, want)
 	}
 }
 

@@ -168,7 +168,18 @@ func (s *SQLiteStore) GetByID(ctx context.Context, id string) (model.Server, err
 }
 
 // List returns all servers ordered by creation time. Passwords are decrypted.
+// Prefer ListWithoutPasswords on hot paths where secrets are not needed.
 func (s *SQLiteStore) List(ctx context.Context) ([]model.Server, error) {
+	return s.list(ctx, true)
+}
+
+// ListWithoutPasswords returns all servers without decrypting passwords.
+// Use on hot paths (e.g., broadcast loop) where secrets are not required.
+func (s *SQLiteStore) ListWithoutPasswords(ctx context.Context) ([]model.Server, error) {
+	return s.list(ctx, false)
+}
+
+func (s *SQLiteStore) list(ctx context.Context, decryptPasswords bool) ([]model.Server, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, created_at, updated_at
 		 FROM servers ORDER BY created_at ASC`)
@@ -191,7 +202,7 @@ func (s *SQLiteStore) List(ctx context.Context) ([]model.Server, error) {
 
 		srv.AuthType = model.AuthType(authType)
 
-		if encPassword != "" {
+	if decryptPasswords && encPassword != "" {
 			pwd, err := decrypt(s.key, encPassword)
 			if err != nil {
 				return nil, fmt.Errorf("decrypt password: %w", err)
@@ -224,27 +235,17 @@ func (s *SQLiteStore) Update(ctx context.Context, srv model.Server) (model.Serve
 		}
 	}
 
-	var result sql.Result
-	var err error
-
-	if srv.Password != "" {
-		result, err = s.db.ExecContext(ctx,
-			`UPDATE servers SET name=?, host=?, port=?, auth_type=?, username=?, encrypted_password=?, key_path=?, host_key_fingerprint=?, updated_at=?
-			 WHERE id=?`,
-			srv.Name, srv.Host, srv.Port, string(srv.AuthType),
-			srv.Username, encPassword, srv.KeyPath, srv.HostKeyFingerprint,
-			srv.UpdatedAt, srv.ID,
-		)
-	} else {
-		// Keep existing password
-		result, err = s.db.ExecContext(ctx,
-			`UPDATE servers SET name=?, host=?, port=?, auth_type=?, username=?, key_path=?, host_key_fingerprint=?, updated_at=?
-			 WHERE id=?`,
-			srv.Name, srv.Host, srv.Port, string(srv.AuthType),
-			srv.Username, srv.KeyPath, srv.HostKeyFingerprint,
-			srv.UpdatedAt, srv.ID,
-		)
-	}
+	// COALESCE(NULLIF(?, ''), encrypted_password) preserves the existing
+	// encrypted password when an empty string is passed (no-op password change).
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE servers SET name=?, host=?, port=?, auth_type=?, username=?,
+		 encrypted_password=COALESCE(NULLIF(?, ''), encrypted_password),
+		 key_path=?, host_key_fingerprint=?, updated_at=?
+		 WHERE id=?`,
+		srv.Name, srv.Host, srv.Port, string(srv.AuthType),
+		srv.Username, encPassword, srv.KeyPath, srv.HostKeyFingerprint,
+		srv.UpdatedAt, srv.ID,
+	)
 
 	if err != nil {
 		return model.Server{}, fmt.Errorf("update server: %w", err)
@@ -280,6 +281,64 @@ func (s *SQLiteStore) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// CleanupOrphanKeys removes key files in dataDir/keys that are no longer
+// referenced by any server's key_path.
+func (s *SQLiteStore) CleanupOrphanKeys(dataDir string) error {
+	keysDir := filepath.Join(dataDir, "keys")
+
+	entries, err := os.ReadDir(keysDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read keys dir: %w", err)
+	}
+
+	// Build set of referenced key paths.
+	rows, err := s.db.Query(`SELECT key_path FROM servers WHERE key_path != ''`)
+	if err != nil {
+		return fmt.Errorf("query key paths: %w", err)
+	}
+	defer rows.Close()
+
+	referenced := make(map[string]bool)
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return fmt.Errorf("scan key path: %w", err)
+		}
+		referenced[p] = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate key paths: %w", err)
+	}
+
+	// Remove unreferenced .key files.
+	var removed int
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if filepath.Ext(entry.Name()) != ".key" {
+			continue
+		}
+		fullPath := filepath.Join(keysDir, entry.Name())
+		if referenced[fullPath] {
+			continue
+		}
+		if err := os.Remove(fullPath); err != nil {
+			slog.Warn("failed to remove orphan key file", "path", fullPath, "error", err)
+			continue
+		}
+		removed++
+	}
+
+	if removed > 0 {
+		slog.Info("cleaned up orphan key files", "count", removed)
+	}
+	return nil
+}
+
 // encryptPassword encrypts a password, returning empty string for empty input.
 func (s *SQLiteStore) encryptPassword(password string) (string, error) {
 	if password == "" {
@@ -287,9 +346,6 @@ func (s *SQLiteStore) encryptPassword(password string) (string, error) {
 	}
 	return encrypt(s.key, password)
 }
-
-// statFile wraps os.Stat for testability.
-var statFile = os.Stat
 
 // deriveKey derives a 32-byte key from a passphrase using SHA-256.
 func deriveKey(passphrase string) [32]byte {

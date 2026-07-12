@@ -149,68 +149,7 @@ describe("WebSocketProvider", () => {
     expect(screen.getByTestId("metrics-srv-1-cpu").textContent).toBe("42.5")
   })
 
-  it("dispatches metrics messages to update server metrics", () => {
-    render(
-      <WebSocketProvider>
-        <StateDisplay />
-      </WebSocketProvider>
-    )
-
-    // First send snapshot to establish state
-    act(() => {
-      mockWs.onopen?.(new Event("open"))
-      sendMessage(mockWs, {
-        type: "snapshot",
-        data: {
-          servers: [{ id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" }],
-          metrics: {
-            "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 10 }, cores: [] } }),
-          },
-        },
-      })
-    })
-
-    // Then send metrics update
-    act(() => {
-      sendMessage(mockWs, {
-        type: "metrics",
-        data: {
-          serverId: "srv-1",
-          metrics: makeMetrics({ cpu: { aggregate: { usagePercent: 88.3 }, cores: [] } }),
-        },
-      })
-    })
-
-    expect(screen.getByTestId("metrics-srv-1-cpu").textContent).toBe("88.3")
-  })
-
-  it("dispatches status messages to update server connection state", () => {
-    render(
-      <WebSocketProvider>
-        <StateDisplay />
-      </WebSocketProvider>
-    )
-
-    act(() => {
-      mockWs.onopen?.(new Event("open"))
-      sendMessage(mockWs, {
-        type: "snapshot",
-        data: {
-          servers: [{ id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" }],
-          metrics: {},
-        },
-      })
-    })
-
-    act(() => {
-      sendMessage(mockWs, {
-        type: "status",
-        data: { serverId: "srv-1", status: "reconnecting" },
-      })
-    })
-
-    expect(screen.getByTestId("server-srv-1-status").textContent).toBe("reconnecting")
-  })
+  // Metrics and status message tests removed — backend sends full state via "snapshot" only
 
   it("sets wsConnected to false on close and attempts reconnection with exponential backoff", () => {
     render(

@@ -51,7 +51,7 @@ export function AddServerDialog({ onServerAdded, defaultOpen = false, defaultAut
   } = useServerForm()
 
   function resetState() {
-    setForm({ ...initialFormData })
+    setForm({ ...initialFormData, authType: defaultAuthType })
     reset()
   }
 

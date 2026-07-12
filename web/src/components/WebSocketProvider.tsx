@@ -35,7 +35,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           type: string
           data: unknown
         }
-        dispatch({ type: envelope.type, data: envelope.data } as MonitorAction)
+        // Only dispatch known action types; unknown types are silently ignored
+        // rather than passed through with a type assertion.
+        switch (envelope.type) {
+          case "snapshot":
+          case "ws_connected":
+          case "remove_server":
+          case "update_server":
+            dispatch({ type: envelope.type, data: envelope.data } as MonitorAction)
+            break
+          default:
+            // Unknown message type — ignore
+        }
       } catch {
         // Ignore malformed messages
       }

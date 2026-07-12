@@ -23,10 +23,10 @@ release: clean
 	cd web && npm ci && npm run build
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-	  go build -ldflags "$(LDFLAGS)" -o bin/belochka-linux-amd64 ./cmd/server/
+	  go build -ldflags "$(LDFLAGS)" -o bin/belochka-$(VERSION)-linux-amd64 ./cmd/server/
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-	  go build -ldflags "$(LDFLAGS)" -o bin/belochka-linux-arm64 ./cmd/server/
+	  go build -ldflags "$(LDFLAGS)" -o bin/belochka-$(VERSION)-linux-arm64 ./cmd/server/
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-windows-x86-64.exe ./cmd/server/
+	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-$(VERSION)-windows-x86-64.exe ./cmd/server/
 	CGO_ENABLED=0 GOOS=windows GOARCH=386 \
-	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-windows-x86.exe ./cmd/server/
+	  go build -ldflags "$(LDFLAGS) -H windowsgui" -o bin/belochka-$(VERSION)-windows-x86.exe ./cmd/server/

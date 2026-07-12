@@ -44,7 +44,8 @@ func loadOrGenerateKey(path string) ([]byte, bool, error) {
 }
 
 // encrypt encrypts plaintext using AES-256-GCM with the given 32-byte key.
-// Returns hex-encoded ciphertext (nonce + sealed data).
+// Returns hex(nonce || ciphertext || 16-byte-authentication-tag) where the
+// nonce is 12 random bytes and the tag is appended by GCM Seal.
 func encrypt(key []byte, plaintext string) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {

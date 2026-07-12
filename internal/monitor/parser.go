@@ -156,6 +156,12 @@ func ParseDisk(input string) (model.DiskMetrics, error) {
 			continue
 		}
 
+		// Only include physical block devices (e.g., /dev/sda1, /dev/mapper/vg-lv).
+		// Virtual filesystems have names like "tmpfs", "cgroup", "none" — skip those.
+		if !strings.HasPrefix(fields[0], "/dev/") {
+			continue
+		}
+
 		result.Partitions = append(result.Partitions, model.DiskPartition{
 			Filesystem: fields[0],
 			Total:      total,
@@ -168,7 +174,55 @@ func ParseDisk(input string) (model.DiskMetrics, error) {
 	return result, nil
 }
 
+// virtualInterfaces is the set of interface name patterns to skip.
+// These are software-created endpoints that add noise without meaningful
+// throughput information (loopback, container veth pairs, VM endpoints).
+var virtualInterfaces = map[string]bool{
+	"lo":      true, // loopback
+	"docker0": true, // default Docker bridge
+}
+
+// isDockerBridge checks whether a br-* interface name looks like a Docker-
+// assigned hex hash (e.g. br-29a590b46462) rather than a hand-named bridge
+// (e.g. br0, br-lan).
+func isDockerBridge(name string) bool {
+	if !strings.HasPrefix(name, "br-") {
+		return false
+	}
+	hash := name[3:] // strip "br-" prefix
+	if len(hash) != 12 {
+		return false
+	}
+	for _, c := range hash {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+// isVirtualInterface reports whether a network interface should be filtered out.
+// Keeps physical NICs, hand-named bridges, VPN tunnels, and libvirt bridges.
+// Filters loopback, Docker bridges/hashes, container veth pairs, and VM vnet endpoints.
+func isVirtualInterface(name string) bool {
+	if virtualInterfaces[name] {
+		return true
+	}
+	// Docker's auto-generated bridge names: br- + 12 hex chars
+	if isDockerBridge(name) {
+		return true
+	}
+	for _, prefix := range []string{"veth", "vnet"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseNetwork parses /proc/net/dev output and returns per-interface raw byte counters.
+// Virtual endpoints (loopback, Docker bridges, veth pairs, vnet) are skipped.
+// VPN tunnels (tun/tap), libvirt bridges (virbr), and hand-named bridges (br0, br-lan) are kept.
 func ParseNetwork(input string) (model.NetworkMetrics, error) {
 	var result model.NetworkMetrics
 
@@ -185,6 +239,10 @@ func ParseNetwork(input string) (model.NetworkMetrics, error) {
 		}
 
 		name := strings.TrimSpace(parts[0])
+		if isVirtualInterface(name) {
+			continue
+		}
+
 		fields := strings.Fields(parts[1])
 		// /proc/net/dev has 16 fields: 8 receive + 8 transmit
 		// RxBytes is field 0, TxBytes is field 8

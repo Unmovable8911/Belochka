@@ -17,12 +17,15 @@ Belochka (белочка, "squirrel") is a single-binary server monitoring tool 
 - **Detailed server view** — per-core CPU gauges, memory/swap ring charts, disk partition breakdown, network interface throughput, sortable process table
 - **Web terminal** — full interactive SSH console in the browser via xterm.js
 - **System tray icon** — on desktop machines (Windows, macOS, Linux with GNOME/KDE/XFCE), shows a tray icon with **Open Dashboard** and **Quit** menu items; automatically falls back to CLI mode on headless servers
+- **Authentication** — password + session cookie protection; first visit prompts to set a password; rate limiting after 10 failed login attempts (30‑minute lockout)
 - **Single binary** — Go backend with embedded React frontend; one file to deploy, nothing else to install
 - **Persistent SSH connections** — automatic reconnection with exponential backoff and keepalive
+- **Browser-based key upload** — upload SSH private key files directly through the UI; keys are validated, stored with UUID names, and orphan files are automatically cleaned up
 - **Encrypted credential storage** — server passwords encrypted at rest with AES-256-GCM
 - **Cron job management** — view, add, edit, enable/disable, delete, and run cron jobs directly from the server detail page
-- **Persistent log file** — all output written to a log file in your user cache directory (e.g. `~/.cache/belochka/belochka.log`) with automatic retention-based cleanup (default: 3 days)
-- **Multi-language UI** — English, Chinese, French, and Russian
+- **Persistent log file** — all output written to `belochka.log` next to the binary (or in the current working directory when run via `go run`) with automatic retention-based cleanup (default: 3 days)
+- **Multi-language UI** — English, Chinese, French, and Russian; language auto-detected on first visit and switchable from the Settings dialog
+- **In-app settings** — configure port, data directory, language, and log retention directly from the dashboard via a gear icon; no config file editing required
 
 ## Quick Start
 
@@ -37,7 +40,7 @@ chmod +x belochka-linux-amd64
 belochka-windows-x86-64.exe
 ```
 
-Open `http://localhost:53136` in your browser. Add servers through the UI.
+Open `http://localhost:53136` in your browser. On first visit you will be prompted to set a password — this protects the dashboard and all API endpoints. After setting the password you are automatically logged in. Add servers through the UI.
 
 ## Build from Source
 
@@ -63,19 +66,33 @@ make release
 
 ## Configuration
 
-Belochka works out of the box with no configuration. Optionally create a `belochka.yaml` in the working directory or pass `--config path/to/config.yaml`:
+Belochka works out of the box with no configuration. All settings are available through the **Settings dialog** (gear icon in the dashboard header). A `config.json` with default values is automatically created next to the binary on first run. You can also pass `--config path/to/config.json` for a custom location:
 
-```yaml
-port: 53136        # HTTP listen port (default: 53136)
-data_dir: ./data   # Database and encryption key location (default: ./data)
-encryption_key: "" # AES-256 key; leave empty to auto-generate
+```json
+{
+  "port": 53136,
+  "data_dir": "./data",
+  "language": "",
+  "log_path": "",
+  "log_retention_days": 3
+}
 ```
+
+| Field | Default | Description |
+|---|---|---|
+| `port` | `53136` | HTTP listen port |
+| `data_dir` | `./data` | Database, encryption key, and uploaded SSH key files (`data/keys/`) |
+| `language` | `""` | UI language (`en`, `zh`, `fr`, `ru`); auto-detected on first visit if empty |
+| `log_path` | `""` | Log file path; defaults to `belochka.log` next to the binary if empty |
+| `log_retention_days` | `3` | Number of days to keep log entries |
+
+Changes to `port` and `data_dir` require a restart; `language` and `log_retention_days` apply immediately via the Settings dialog.
 
 ### Flags
 
 | Flag | Description |
 |---|---|
-| `--config <path>` | Path to the YAML configuration file |
+| `--config <path>` | Path to the JSON configuration file |
 | `--no-tray` | Disable the system tray icon; run as a plain CLI process |
 | `--version` | Print version and exit |
 
@@ -83,9 +100,8 @@ encryption_key: "" # AES-256 key; leave empty to auto-generate
 
 | Variable | Description |
 |---|---|
-| `BELOCHKA_ENCRYPTION_KEY` | Overrides `encryption_key` from the config file |
-| `BELOCHKA_LOG_RETENTION_DAYS` | Number of days to keep log entries in the log file (default: `3`) |
+| `BELOCHKA_ENCRYPTION_KEY` | AES-256 encryption key for stored passwords; auto-generated on first run if not set |
 
 ### Encryption Key
 
-On first run without a configured key, Belochka auto-generates one at `{data_dir}/encryption.key` and logs a warning. For production, set the key explicitly via the config file or environment variable.
+On first run without a key set, Belochka auto-generates one at `{data_dir}/encryption.key` and logs a warning. For production, set the key explicitly via the environment variable.

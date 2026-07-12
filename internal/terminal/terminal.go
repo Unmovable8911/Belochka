@@ -2,14 +2,26 @@ package terminal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path"
 	"sync"
 
+	"belochka/internal/wsutil"
 	"github.com/gorilla/websocket"
 )
+
+const (
+	defaultTermRows = 24
+	defaultTermCols = 80
+	readBufferSize  = 4096
+)
+
+// errOpenSession is a sentinel wrapped by prepareSession when OpenSession fails,
+// allowing ServeHTTP to map it back to HTTP 502 Bad Gateway.
+var errOpenSession = errors.New("open session")
 
 // Session abstracts an SSH session for testability.
 type Session interface {
@@ -43,7 +55,7 @@ type statusMessage struct {
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: wsutil.CheckOrigin,
 }
 
 // Handler handles terminal WebSocket connections.
@@ -78,35 +90,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.opener.OpenSession(serverID)
+	session, stdin, stdout, err := h.prepareSession(serverID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	if err := session.RequestPTY("xterm-256color", 24, 80); err != nil {
-		session.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		session.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		session.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if err := session.Shell(); err != nil {
-		session.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		code := http.StatusInternalServerError
+		if errors.Is(err, errOpenSession) {
+			code = http.StatusBadGateway
+		}
+		http.Error(w, err.Error(), code)
 		return
 	}
 
@@ -123,6 +113,40 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sendStatus(conn, "connected", "")
 
 	go h.bridgeSession(conn, session, stdin, stdout)
+}
+
+// prepareSession opens an SSH session, requests a PTY, and returns the session
+// along with its stdin/stdout pipes. The caller is responsible for closing the
+// session on error.
+func (h *Handler) prepareSession(serverID string) (Session, io.WriteCloser, io.Reader, error) {
+	session, err := h.opener.OpenSession(serverID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: %w", errOpenSession, err)
+	}
+
+	if err := session.RequestPTY("xterm-256color", defaultTermRows, defaultTermCols); err != nil {
+		session.Close()
+		return nil, nil, nil, fmt.Errorf("request PTY: %w", err)
+	}
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, fmt.Errorf("stdin pipe: %w", err)
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+
+	if err := session.Shell(); err != nil {
+		session.Close()
+		return nil, nil, nil, fmt.Errorf("start shell: %w", err)
+	}
+
+	return session, stdin, stdout, nil
 }
 
 func sendStatus(conn *websocket.Conn, status, message string) {
@@ -145,7 +169,7 @@ func (h *Handler) bridgeSession(conn *websocket.Conn, session Session, stdin io.
 	// SSH stdout → WebSocket (binary frames)
 	go func() {
 		defer close(done)
-		buf := make([]byte, 4096)
+		buf := make([]byte, readBufferSize)
 		for {
 			n, err := stdout.Read(buf)
 			if n > 0 {

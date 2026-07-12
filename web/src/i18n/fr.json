@@ -23,7 +23,9 @@
     "edit": "Modifier",
     "delete": "Supprimer",
     "console": "Console",
-    "swap": "Swap"
+    "swap": "Swap",
+    "failedToLoad": "Échec du chargement du serveur",
+    "coresCount": "{{count}} cœurs"
   },
   "serverCard": {
     "cpu": "CPU",
@@ -33,7 +35,13 @@
     "connecting": "Connexion en cours...",
     "reconnecting": "Reconnexion ({{attempts}}/∞)",
     "authFailed": "Échec d'authentification — vérifiez la configuration",
-    "hostKeyMismatch": "Clé d'hôte non correspondante — vérifiez la configuration"
+    "hostKeyMismatch": "Clé d'hôte non correspondante — vérifiez la configuration",
+    "reconnect": "Reconnecter",
+    "reconnectFailed": "Échec de la reconnexion"
+  },
+  "serverForm": {
+    "authTypePassword": "Mot de passe",
+    "authTypeKey": "Clé SSH"
   },
   "addServer": {
     "title": "Ajouter un serveur",
@@ -54,12 +62,18 @@
     "saving": "Enregistrement...",
     "savedSuccess": "Serveur \"{{name}}\" ajouté avec succès",
     "connectionTestFailed": "Échec du test de connexion",
-    "saveFailed": "Échec de l'enregistrement du serveur"
+    "saveFailed": "Échec de l'enregistrement du serveur",
+    "uploadKey": "Téléverser une clé",
+    "replaceKey": "Remplacer",
+    "uploadingKey": "Téléversement...",
+    "uploadKeyFailed": "Échec du téléversement de la clé",
+    "keyFileTooLarge": "Fichier clé trop volumineux (max 16 Ko)"
   },
   "editServer": {
     "title": "Modifier le serveur",
     "retestRequired": "Les champs de connexion ont changé. Un nouveau test est requis avant l'enregistrement.",
-    "savedSuccess": "Serveur \"{{name}}\" mis à jour avec succès"
+    "savedSuccess": "Serveur \"{{name}}\" mis à jour avec succès",
+    "passwordUnchanged": "inchangé"
   },
   "deleteServer": {
     "title": "Supprimer le serveur",
@@ -76,6 +90,10 @@
   },
   "connection": {
     "lost": "Connexion perdue, reconnexion en cours..."
+  },
+  "networkChart": {
+    "noInterfaces": "Aucune interface réseau",
+    "waitingForData": "En attente de données..."
   },
   "processTable": {
     "pid": "PID",
@@ -95,6 +113,51 @@
   },
   "language": {
     "label": "Langue"
+  },
+  "auth": {
+    "setupTitle": "Définir le mot de passe",
+    "setupHint": "Créez un mot de passe pour protéger votre console Belochka.",
+    "loginHint": "Entrez votre mot de passe pour continuer.",
+    "password": "Mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "oldPassword": "Mot de passe actuel",
+    "newPassword": "Nouveau mot de passe",
+    "confirmNewPassword": "Confirmer le nouveau mot de passe",
+    "setPassword": "Définir le mot de passe",
+    "settingUp": "Configuration...",
+    "login": "Connexion",
+    "loggingIn": "Connexion...",
+    "logout": "Déconnexion",
+    "changePassword": "Changer le mot de passe",
+    "changingPassword": "Modification...",
+    "showPassword": "Afficher le mot de passe",
+    "fillAllFields": "Veuillez remplir tous les champs.",
+    "passwordsDontMatch": "Les mots de passe ne correspondent pas.",
+    "unknownError": "Une erreur inattendue s'est produite.",
+    "lockedOut": "Verrouillé ({{seconds}}s)",
+    "passwordChanged": "Mot de passe modifié avec succès.",
+    "passwordChangeFailed": "Échec de la modification du mot de passe.",
+    "incorrectPassword": "Mot de passe actuel incorrect.",
+    "passwordTooShort": "Le mot de passe doit comporter au moins 6 caractères.",
+    "loggedOut": "Déconnecté avec succès."
+  },
+  "settings": {
+    "title": "Paramètres",
+    "language": "Langue",
+    "logPath": "Chemin des journaux",
+    "logPathPlaceholder": "Défaut de la plateforme",
+    "logRetentionDays": "Rétention des journaux (jours)",
+    "port": "Port",
+    "dataDir": "Répertoire de données",
+    "save": "Enregistrer",
+    "saving": "Enregistrement...",
+    "savedSuccess": "Paramètres enregistrés",
+    "saveFailed": "Échec de l'enregistrement des paramètres",
+    "theme": "Thème",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "themeSystem": "Système",
+    "restartRequired": "Ces paramètres nécessitent un redémarrage pour prendre effet :"
   },
   "cronJobs": {
     "tabOverview": "Vue d'ensemble",

@@ -37,7 +37,7 @@ func readAll(t *testing.T, path string) string {
 // Cycle 1: written line appears in file.
 func TestLogger_WritesToFile(t *testing.T) {
 	path := t.TempDir() + "/test.log"
-	l, err := open(path, false, nil)
+	l, err := open(path, false, nil, 3*24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestLogger_WritesToFile(t *testing.T) {
 func TestLogger_TeeMode(t *testing.T) {
 	path := t.TempDir() + "/test.log"
 	buf := &bytes.Buffer{}
-	l, err := open(path, true, buf)
+	l, err := open(path, true, buf, 3*24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestLogger_RetainsRecentLines(t *testing.T) {
 	recent := slogLine(time.Now().Add(-1*24*time.Hour), "recent")
 	writeRaw(t, path, []string{recent})
 
-	l, err := open(path, false, nil)
+	l, err := open(path, false, nil, 3*24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestLogger_PurgesOldLines(t *testing.T) {
 	old := slogLine(time.Now().Add(-4*24*time.Hour), "old-message")
 	writeRaw(t, path, []string{old})
 
-	l, err := open(path, false, nil)
+	l, err := open(path, false, nil, 3*24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,15 +128,14 @@ func TestLogger_PurgesOldLines(t *testing.T) {
 	}
 }
 
-// Cycle 5: BELOCHKA_LOG_RETENTION_DAYS overrides default retention.
-func TestLogger_RetentionEnvVar(t *testing.T) {
-	t.Setenv("BELOCHKA_LOG_RETENTION_DAYS", "1")
-
+// Cycle 5: retention parameter controls the window.
+func TestLogger_RetentionParameter(t *testing.T) {
 	path := t.TempDir() + "/test.log"
 	old := slogLine(time.Now().Add(-2*24*time.Hour), "two-days-old")
 	writeRaw(t, path, []string{old})
 
-	l, err := open(path, false, nil)
+	// 1-day retention: a 2-day-old line should be purged.
+	l, err := open(path, false, nil, 1*24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +162,7 @@ func TestLogger_UnparseableFirstLineStillPurges(t *testing.T) {
 	writeRaw(t, path, []string{"garbage without a timestamp\n", old})
 
 	// open performs the initial purge.
-	l, err := open(path, false, nil)
+	l, err := open(path, false, nil, 3*24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

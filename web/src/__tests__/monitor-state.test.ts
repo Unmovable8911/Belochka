@@ -44,52 +44,7 @@ describe("monitorReducer", () => {
     expect(state.metrics["srv-1"].system.hostname).toBe("web-1")
   })
 
-  it("updates metrics for a specific server", () => {
-    const stateWithServers: MonitorState = {
-      ...initialMonitorState,
-      servers: [
-        { id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" },
-        { id: "srv-2", name: "db-1", host: "10.0.0.2", status: "connected" },
-      ],
-      metrics: {
-        "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 10 }, cores: [] } }),
-        "srv-2": makeMetrics({ cpu: { aggregate: { usagePercent: 20 }, cores: [] } }),
-      },
-    }
-
-    const updatedMetrics = makeMetrics({ cpu: { aggregate: { usagePercent: 75.5 }, cores: [] } })
-    const action: MonitorAction = {
-      type: "metrics",
-      data: { serverId: "srv-1", metrics: updatedMetrics },
-    }
-
-    const state = monitorReducer(stateWithServers, action)
-
-    expect(state.metrics["srv-1"].cpu.aggregate.usagePercent).toBe(75.5)
-    // srv-2 unchanged
-    expect(state.metrics["srv-2"].cpu.aggregate.usagePercent).toBe(20)
-  })
-
-  it("updates server connection status", () => {
-    const stateWithServers: MonitorState = {
-      ...initialMonitorState,
-      servers: [
-        { id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" },
-        { id: "srv-2", name: "db-1", host: "10.0.0.2", status: "connected" },
-      ],
-    }
-
-    const action: MonitorAction = {
-      type: "status",
-      data: { serverId: "srv-1", status: "disconnected" },
-    }
-
-    const state = monitorReducer(stateWithServers, action)
-
-    expect(state.servers[0].status).toBe("disconnected")
-    // srv-2 unchanged
-    expect(state.servers[1].status).toBe("connected")
-  })
+  // Metrics and status actions removed — backend sends full state via "snapshot" only
 
   it("returns state unchanged for unknown action type", () => {
     const state = monitorReducer(initialMonitorState, { type: "unknown" } as unknown as MonitorAction)

@@ -25,6 +25,11 @@ export default function Console() {
     getServer(id).then(setServer).catch(() => {})
   }, [id])
 
+  useEffect(() => {
+    document.title = server ? server.name : "Belochka"
+    return () => { document.title = "Belochka" }
+  }, [server])
+
   const connect = useCallback(() => {
     if (!id || !termRef.current) return
 

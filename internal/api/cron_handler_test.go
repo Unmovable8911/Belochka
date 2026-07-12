@@ -144,13 +144,22 @@ func (m *mockCronExecutorFn) Execute(_ context.Context, _, cmd string) (string, 
 }
 
 // decodeBase64FromWriteCmd extracts and decodes the base64 payload from a
-// crontab write command produced by createCron: "echo <b64> | base64 -d | crontab -"
+// crontab write command: "printf '%s' <b64> | base64 -d | crontab -"
 func decodeBase64FromWriteCmd(cmd string) (string, error) {
 	parts := strings.Fields(cmd)
-	if len(parts) < 2 {
-		return "", errors.New("unexpected write command format")
+	// After "printf '%s' <base64>": parts[0]="printf", parts[1]="'%s'", parts[2]="<base64>"
+	// The base64 data is always the last field before the first pipe.
+	dataIdx := -1
+	for i, p := range parts {
+		if p == "|" {
+			break
+		}
+		dataIdx = i
 	}
-	decoded, err := base64.StdEncoding.DecodeString(parts[1])
+	if dataIdx < 0 {
+		return "", errors.New("unexpected write command format: no data field before pipe")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(parts[dataIdx])
 	if err != nil {
 		return "", err
 	}
@@ -291,9 +300,12 @@ func TestCreateCron_SSHReadError_Returns502(t *testing.T) {
 	})
 
 	rec := postCron(router, "srv-1", map[string]string{
-		"minute":  "*",
-		"hour":    "*",
-		"command": "/usr/bin/job.sh",
+		"minute":     "*",
+		"hour":       "*",
+		"dayOfMonth": "*",
+		"month":      "*",
+		"dayOfWeek":  "*",
+		"command":    "/usr/bin/job.sh",
 	})
 
 	if rec.Code != http.StatusBadGateway {
@@ -310,9 +322,12 @@ func TestCreateCron_SSHWriteError_Returns502(t *testing.T) {
 	})
 
 	rec := postCron(router, "srv-1", map[string]string{
-		"minute":  "*",
-		"hour":    "*",
-		"command": "/usr/bin/job.sh",
+		"minute":     "*",
+		"hour":       "*",
+		"dayOfMonth": "*",
+		"month":      "*",
+		"dayOfWeek":  "*",
+		"command":    "/usr/bin/job.sh",
 	})
 
 	if rec.Code != http.StatusBadGateway {
@@ -568,7 +583,7 @@ func TestDeleteCron_SSHReadError_Returns502(t *testing.T) {
 
 // --- POST /api/servers/{id}/crons/{index}/run ---
 
-// mockCronRunner implements api.CronRunner for testing.
+// mockCronRunner implements cron.Runner for testing.
 type mockCronRunner struct {
 	output   string
 	exitCode int
@@ -586,7 +601,7 @@ func runCronReq(router http.Handler, serverID string, index int) *httptest.Respo
 	return rec
 }
 
-func setupRouterWithRunner(executor cron.Executor, runner api.CronRunner) http.Handler {
+func setupRouterWithRunner(executor cron.Executor, runner cron.Runner) http.Handler {
 	h := hub.New()
 	return api.NewRouter(h, api.WithCronExecutor(executor), api.WithCronRunner(runner))
 }

@@ -122,9 +122,9 @@ func TestParseCombinedOutput(t *testing.T) {
 		t.Errorf("disk partitions = %d, want 1", len(metrics.Disk.Partitions))
 	}
 
-	// Network: check interfaces parsed
-	if len(metrics.Network.Interfaces) != 2 {
-		t.Errorf("network interfaces = %d, want 2", len(metrics.Network.Interfaces))
+	// Network: check interfaces parsed (lo filtered as virtual)
+	if len(metrics.Network.Interfaces) != 1 {
+		t.Errorf("network interfaces = %d, want 1", len(metrics.Network.Interfaces))
 	}
 
 	// Process: check process parsed
@@ -242,9 +242,9 @@ func TestComputeNetworkRates_newInterface(t *testing.T) {
 
 // fakeExecutor is a test double for SSHExecutor.
 type fakeExecutor struct {
-	mu       sync.Mutex
-	output   string
-	err      error
+	mu        sync.Mutex
+	output    string
+	err       error
 	callCount int
 }
 
@@ -263,7 +263,7 @@ func (f *fakeExecutor) calls() int {
 
 func TestCollector_firstCyclePartial(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -299,7 +299,7 @@ func TestCollector_firstCyclePartial(t *testing.T) {
 
 func TestCollector_secondCycleFull(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -323,7 +323,7 @@ func TestCollector_secondCycleFull(t *testing.T) {
 	}
 done:
 	// CPU usage should have entries (aggregate + per-core)
-	if len(snap.CPU) == 0 {
+	if snap.AggregateCPU == nil {
 		t.Error("expected CPU usage entries after second cycle")
 	}
 	// Network rates should have entries
@@ -334,7 +334,7 @@ done:
 
 func TestCollector_contextCancellation(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -357,7 +357,7 @@ func TestCollector_contextCancellation(t *testing.T) {
 
 func TestCollector_failureCount(t *testing.T) {
 	exec := &fakeExecutor{err: fmt.Errorf("ssh connection failed")}
-	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -375,14 +375,14 @@ func TestCollector_failureCount(t *testing.T) {
 		}
 	}
 
-	if c.ConsecutiveFailures() < 3 {
-		t.Errorf("consecutive failures = %d, want >= 3", c.ConsecutiveFailures())
+	if c.failures < 3 {
+		t.Errorf("consecutive failures = %d, want >= 3", c.failures)
 	}
 }
 
 func TestCollector_failureCountResetsOnSuccess(t *testing.T) {
 	exec := &fakeExecutor{err: fmt.Errorf("ssh fail")}
-	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	c := NewCollector("srv-1", exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -400,8 +400,8 @@ func TestCollector_failureCountResetsOnSuccess(t *testing.T) {
 		}
 	}
 
-	if c.ConsecutiveFailures() < 2 {
-		t.Errorf("expected >= 2 failures, got %d", c.ConsecutiveFailures())
+	if c.failures < 2 {
+		t.Errorf("expected >= 2 failures, got %d", c.failures)
 	}
 
 	// Now make it succeed
@@ -422,8 +422,8 @@ func TestCollector_failureCountResetsOnSuccess(t *testing.T) {
 		}
 	}
 
-	if c.ConsecutiveFailures() != 0 {
-		t.Errorf("consecutive failures = %d, want 0 after success", c.ConsecutiveFailures())
+	if c.failures != 0 {
+		t.Errorf("consecutive failures = %d, want 0 after success", c.failures)
 	}
 }
 
@@ -436,7 +436,7 @@ func TestCollector_timeoutSkipsCycle(t *testing.T) {
 	c := NewCollector("srv-1", slowExec, CollectorOptions{
 		Interval: 50 * time.Millisecond,
 		Timeout:  100 * time.Millisecond, // shorter than the block
-	})
+	}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -447,7 +447,7 @@ func TestCollector_timeoutSkipsCycle(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Timeouts should count as failures
-	if c.ConsecutiveFailures() == 0 {
+	if c.failures == 0 {
 		// Actually, timeouts skip the cycle. Let's check that no snapshot is produced
 		// (since every call times out, we never get valid data).
 	}
@@ -479,7 +479,7 @@ func (b *blockingExecutor) Execute(ctx context.Context, serverID, cmd string) (s
 
 func TestManager_addAndRemove(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -522,7 +522,7 @@ func TestManager_addAndRemove(t *testing.T) {
 
 func TestManager_multipleServers(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -546,16 +546,15 @@ func TestManager_multipleServers(t *testing.T) {
 		t.Errorf("server count = %d, want 2", len(ids))
 	}
 
-	// AllSnapshots should return both
-	all := m.AllSnapshots()
-	if len(all) != 2 {
-		t.Errorf("all snapshots = %d, want 2", len(all))
+	// Both snapshots should be retrievable via Latest
+	if s1, s2 := m.Latest("srv-1"), m.Latest("srv-2"); s1 == nil || s2 == nil {
+		t.Error("expected both snapshots to be available")
 	}
 }
 
 func TestManager_stopAll(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -574,7 +573,7 @@ func TestManager_stopAll(t *testing.T) {
 
 func TestManager_addDuplicate(t *testing.T) {
 	exec := &fakeExecutor{output: validCombinedOutput()}
-	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second})
+	m := NewManager(exec, CollectorOptions{Interval: 50 * time.Millisecond, Timeout: 1 * time.Second}, clock.Real{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -616,8 +615,7 @@ func TestCollector_fakeClock_deterministicDelta(t *testing.T) {
 	c := NewCollector("srv-1", exec, CollectorOptions{
 		Interval: 2 * time.Second,
 		Timeout:  5 * time.Second,
-	})
-	c.clock = clk
+	}, clk)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -644,12 +642,12 @@ func TestCollector_fakeClock_deterministicDelta(t *testing.T) {
 	if snap.Partial {
 		t.Error("second cycle should not be partial")
 	}
-	if len(snap.CPU) == 0 {
+	if snap.AggregateCPU == nil {
 		t.Error("expected CPU usage entries")
 	}
 	// With identical consecutive readings, all CPU deltas are zero
-	if snap.CPU[0].UsedPct != 0 {
-		t.Errorf("CPU used = %.2f, want 0 (identical readings)", snap.CPU[0].UsedPct)
+	if snap.AggregateCPU.UsedPct != 0 {
+		t.Errorf("CPU used = %.2f, want 0 (identical readings)", snap.AggregateCPU.UsedPct)
 	}
 	// Network rates should be zero with identical readings and 2s interval
 	for _, r := range snap.Network {
@@ -668,8 +666,7 @@ func TestCollector_fakeClock_failureThreshold(t *testing.T) {
 	c := NewCollector("srv-1", exec, CollectorOptions{
 		Interval: 2 * time.Second,
 		Timeout:  5 * time.Second,
-	})
-	c.clock = clk
+	}, clk)
 	c.OnFailureThreshold = func(failures int) {
 		triggered <- failures
 	}
@@ -716,7 +713,7 @@ func TestCollector_onFailureThresholdTriggered(t *testing.T) {
 	c := NewCollector("srv-1", exec, CollectorOptions{
 		Interval: 50 * time.Millisecond,
 		Timeout:  1 * time.Second,
-	})
+	}, clock.Real{})
 	c.OnFailureThreshold = func(failures int) {
 		triggered <- failures
 	}
@@ -754,7 +751,7 @@ func TestCollector_onFailureThresholdNotCalledBelowThreshold(t *testing.T) {
 	c := NewCollector("srv-1", exec, CollectorOptions{
 		Interval: 50 * time.Millisecond,
 		Timeout:  1 * time.Second,
-	})
+	}, clock.Real{})
 	c.OnFailureThreshold = func(failures int) {
 		triggered <- failures
 	}
@@ -791,7 +788,7 @@ func TestCollector_onFailureThresholdFiresOncePerCrossing(t *testing.T) {
 	c := NewCollector("srv-1", exec, CollectorOptions{
 		Interval: 20 * time.Millisecond,
 		Timeout:  1 * time.Second,
-	})
+	}, clock.Real{})
 	c.OnFailureThreshold = func(failures int) {
 		triggered <- failures
 	}

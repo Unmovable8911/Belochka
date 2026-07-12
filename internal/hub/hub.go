@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 
+	"belochka/internal/wsutil"
 	"github.com/gorilla/websocket"
 )
 
@@ -17,7 +18,7 @@ type Envelope struct {
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: wsutil.CheckOrigin,
 }
 
 // client represents a single WebSocket connection.

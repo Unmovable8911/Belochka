@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 
+	"belochka/internal/auth"
 	"belochka/internal/cron"
 	"belochka/internal/hub"
 	"belochka/internal/static"
@@ -13,17 +15,27 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// LangStore is the subset of config.Store needed by the static handler.
+// Aliased here so callers don't need to import internal/static directly.
+type LangStore = static.LangStore
+
 // RouterOption configures the router.
 type RouterOption func(*routerConfig)
 
 type routerConfig struct {
 	staticFS        fs.FS
+	langStore       static.LangStore
 	serverStore     ServerStore
 	sshTester       SSHTester
 	onServerChange  func()
 	terminalHandler *terminal.Handler
 	cronExecutor    cron.Executor
-	cronRunner      CronRunner
+	cronRunner      cron.Runner
+	configStore     ConfigStore
+	keyFileDir      string
+	authHandler     *auth.Handler
+	authStore       *auth.SessionStore
+	reconnecter     Reconnecter
 }
 
 // WithStaticFS enables serving embedded frontend assets for non-API routes.
@@ -31,6 +43,14 @@ type routerConfig struct {
 func WithStaticFS(fsys fs.FS) RouterOption {
 	return func(c *routerConfig) {
 		c.staticFS = fsys
+	}
+}
+
+// WithLangStore sets the language store used by the static handler for
+// Accept-Language detection and meta tag injection.
+func WithLangStore(store static.LangStore) RouterOption {
+	return func(c *routerConfig) {
+		c.langStore = store
 	}
 }
 
@@ -70,9 +90,39 @@ func WithCronExecutor(executor cron.Executor) RouterOption {
 }
 
 // WithCronRunner enables the "run cron now" endpoint.
-func WithCronRunner(runner CronRunner) RouterOption {
+func WithCronRunner(runner cron.Runner) RouterOption {
 	return func(c *routerConfig) {
 		c.cronRunner = runner
+	}
+}
+
+// WithConfigStore enables the GET and PATCH /api/config endpoints.
+func WithConfigStore(store ConfigStore) RouterOption {
+	return func(c *routerConfig) {
+		c.configStore = store
+	}
+}
+
+// WithReconnecter enables the POST /api/servers/{id}/reconnect endpoint.
+func WithReconnecter(r Reconnecter) RouterOption {
+	return func(c *routerConfig) {
+		c.reconnecter = r
+	}
+}
+
+// WithAuth enables authentication on protected routes.
+func WithAuth(h *auth.Handler, store *auth.SessionStore) RouterOption {
+	return func(c *routerConfig) {
+		c.authHandler = h
+		c.authStore = store
+	}
+}
+
+// WithKeyFileDir sets the directory for storing uploaded SSH key files.
+// When set, enables the POST /api/files/key endpoint.
+func WithKeyFileDir(dir string) RouterOption {
+	return func(c *routerConfig) {
+		c.keyFileDir = dir
 	}
 }
 
@@ -85,41 +135,121 @@ func NewRouter(h *hub.Hub, opts ...RouterOption) http.Handler {
 
 	r := chi.NewRouter()
 
+	// --- Public routes (no auth required) ---
 	r.Get("/api/health", handleHealth)
-	r.Get("/api/ws", h.ServeWS)
 
-	// Server CRUD and test endpoints
-	if cfg.serverStore != nil {
-		sh := &serverHandler{store: cfg.serverStore, tester: cfg.sshTester, onChange: cfg.onServerChange}
-		r.Post("/api/servers", sh.create)
-		r.Get("/api/servers", sh.list)
-		r.Get("/api/servers/{id}", sh.getByID)
-		r.Put("/api/servers/{id}", sh.update)
-		r.Delete("/api/servers/{id}", sh.delete)
-		if cfg.sshTester != nil {
-			r.Post("/api/servers/test", sh.testConnection)
+	if cfg.authHandler != nil {
+		r.Post("/api/login", cfg.authHandler.HandleLogin)
+		r.Post("/api/setup", cfg.authHandler.HandleSetup)
+		r.Get("/api/auth/status", cfg.authHandler.HandleAuthStatus)
+	}
+
+	// --- Protected routes (auth required) ---
+	if cfg.authStore != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(auth.Middleware(cfg.authStore))
+
+			if cfg.authHandler != nil {
+				r.Post("/api/logout", cfg.authHandler.HandleLogout)
+				r.Post("/api/change-password", cfg.authHandler.HandleChangePassword)
+			}
+
+			r.Get("/api/ws", h.ServeWS)
+
+			// Server CRUD and test endpoints
+			if cfg.serverStore != nil {
+				sh := &serverHandler{store: cfg.serverStore, tester: cfg.sshTester, reconnecter: cfg.reconnecter, onChange: cfg.onServerChange}
+				r.Post("/api/servers", sh.create)
+				r.Get("/api/servers", sh.list)
+				r.Get("/api/servers/{id}", sh.getByID)
+				r.Put("/api/servers/{id}", sh.update)
+				r.Delete("/api/servers/{id}", sh.delete)
+				if cfg.sshTester != nil {
+					r.Post("/api/servers/test", sh.testConnection)
+				}
+				if cfg.reconnecter != nil {
+					r.Post("/api/servers/{id}/reconnect", sh.reconnect)
+				}
+			}
+
+			// Key file upload
+			if cfg.keyFileDir != "" {
+				r.Post("/api/files/key", HandleUploadKey(filepath.Join(cfg.keyFileDir, "keys")))
+			}
+
+			// Terminal WebSocket endpoint
+			if cfg.terminalHandler != nil {
+				r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
+			}
+
+			// Cron endpoints
+			if cfg.cronExecutor != nil {
+				ch := &cronHandler{service: cron.NewService(cfg.cronExecutor, cfg.cronRunner)}
+				r.Get("/api/servers/{id}/crons", ch.listCrons)
+				r.Post("/api/servers/{id}/crons", ch.createCron)
+				r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)
+				r.Delete("/api/servers/{id}/crons/{index}", ch.deleteCron)
+				if cfg.cronRunner != nil {
+					r.Post("/api/servers/{id}/crons/{index}/run", ch.runCron)
+				}
+			}
+
+			// Config endpoints
+			if cfg.configStore != nil {
+				ch := &configHandler{store: cfg.configStore}
+				r.Get("/api/config", ch.getConfig)
+				r.Patch("/api/config", ch.patchConfig)
+			}
+		})
+	} else {
+		// No auth configured — mount routes unprotected (fallback for tests without auth).
+		r.Get("/api/ws", h.ServeWS)
+
+		if cfg.serverStore != nil {
+			sh := &serverHandler{store: cfg.serverStore, tester: cfg.sshTester, reconnecter: cfg.reconnecter, onChange: cfg.onServerChange}
+			r.Post("/api/servers", sh.create)
+			r.Get("/api/servers", sh.list)
+			r.Get("/api/servers/{id}", sh.getByID)
+			r.Put("/api/servers/{id}", sh.update)
+			r.Delete("/api/servers/{id}", sh.delete)
+			if cfg.sshTester != nil {
+				r.Post("/api/servers/test", sh.testConnection)
+			}
+			if cfg.reconnecter != nil {
+				r.Post("/api/servers/{id}/reconnect", sh.reconnect)
+			}
 		}
-	}
 
-	// Terminal WebSocket endpoint
-	if cfg.terminalHandler != nil {
-		r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
-	}
+		if cfg.keyFileDir != "" {
+			r.Post("/api/files/key", HandleUploadKey(filepath.Join(cfg.keyFileDir, "keys")))
+		}
 
-	// Cron endpoints
-	if cfg.cronExecutor != nil {
-		ch := &cronHandler{service: cron.NewService(cfg.cronExecutor, cfg.cronRunner)}
-		r.Get("/api/servers/{id}/crons", ch.listCrons)
-		r.Post("/api/servers/{id}/crons", ch.createCron)
-		r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)
-		r.Delete("/api/servers/{id}/crons/{index}", ch.deleteCron)
-		if cfg.cronRunner != nil {
-			r.Post("/api/servers/{id}/crons/{index}/run", ch.runCron)
+		if cfg.terminalHandler != nil {
+			r.Get("/api/ws/terminal/{serverID}", cfg.terminalHandler.ServeHTTP)
+		}
+
+		if cfg.cronExecutor != nil {
+			ch := &cronHandler{service: cron.NewService(cfg.cronExecutor, cfg.cronRunner)}
+			r.Get("/api/servers/{id}/crons", ch.listCrons)
+			r.Post("/api/servers/{id}/crons", ch.createCron)
+			r.Put("/api/servers/{id}/crons/{index}", ch.updateCron)
+			r.Delete("/api/servers/{id}/crons/{index}", ch.deleteCron)
+			if cfg.cronRunner != nil {
+				r.Post("/api/servers/{id}/crons/{index}/run", ch.runCron)
+			}
+		}
+
+		if cfg.configStore != nil {
+			ch := &configHandler{store: cfg.configStore}
+			r.Get("/api/config", ch.getConfig)
+			r.Patch("/api/config", ch.patchConfig)
 		}
 	}
 
 	// Mount embedded static file serving if available (production mode).
-	if handler := static.NewHandler(cfg.staticFS); handler != nil {
+	// Static files and SPA routes are not protected by auth so the login/setup
+	// pages can load.
+	if handler := static.NewHandler(cfg.staticFS, cfg.langStore); handler != nil {
 		r.NotFound(handler.ServeHTTP)
 	}
 

@@ -15,9 +15,9 @@ Belochka (белочка, "squirrel") — a single-binary Go+React web app for m
 
 ## Requirements
 
-- Read `CODEBASE.md` when task requires understanding of the project.
-- Read `CODEBASE.md` before editing the code base.
-- After modifying code, update relating code to avoid zombie code, incompatible code, etc.
+- Before any code exploration or editing, **always** read `CODEBASE.md` first to understand the project structure, components, data flows, and external dependencies.
+- Based on `CODEBASE.md` and the current task, determine the exact set of files that are relevant. **Only** read and modify those files; never load or touch unrelated files. This keeps the context clean and focused.
+- After modifying code, **proactively** update any associated code (imports, references, configurations, etc.) to eliminate zombie code, broken references, or incompatibilities introduced by the change.
 
 ## Guidelines
 
@@ -48,5 +48,4 @@ Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, sim
 - Public internet deployment
 - SSH key passphrase support
 - User-configurable card ordering (drag and drop)
-- Light theme or theme switching
 - Docker-native deployment (Dockerfile)

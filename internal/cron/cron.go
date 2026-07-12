@@ -89,9 +89,9 @@ func parseCronLine(line string) (CronEntry, bool) {
 	}, true
 }
 
-// BuildCronLine constructs a standard cron line from the given entry's schedule
+// buildCronLine constructs a standard cron line from the given entry's schedule
 // fields and command.
-func BuildCronLine(entry CronEntry) string {
+func buildCronLine(entry CronEntry) string {
 	return fmt.Sprintf("%s %s %s %s %s %s",
 		entry.Minute, entry.Hour, entry.DayOfMonth, entry.Month, entry.DayOfWeek, entry.Command)
 }
@@ -99,7 +99,7 @@ func BuildCronLine(entry CronEntry) string {
 // BuildLine constructs a cron line respecting the Enabled flag. Disabled entries
 // are written with the "#[disabled] " prefix; enabled entries are plain lines.
 func BuildLine(entry CronEntry) string {
-	plain := BuildCronLine(entry)
+	plain := buildCronLine(entry)
 	if !entry.Enabled {
 		return disabledPrefix + plain
 	}

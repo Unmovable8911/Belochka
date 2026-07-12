@@ -23,7 +23,9 @@
     "edit": "Edit",
     "delete": "Delete",
     "console": "Console",
-    "swap": "Swap"
+    "swap": "Swap",
+    "failedToLoad": "Failed to load server",
+    "coresCount": "{{count}} cores"
   },
   "serverCard": {
     "cpu": "CPU",
@@ -33,7 +35,13 @@
     "connecting": "Connecting...",
     "reconnecting": "Reconnecting ({{attempts}}/∞)",
     "authFailed": "Auth failed — check configuration",
-    "hostKeyMismatch": "Host key mismatch — check configuration"
+    "hostKeyMismatch": "Host key mismatch — check configuration",
+    "reconnect": "Reconnect",
+    "reconnectFailed": "Reconnect failed"
+  },
+  "serverForm": {
+    "authTypePassword": "Password",
+    "authTypeKey": "SSH Key"
   },
   "addServer": {
     "title": "Add Server",
@@ -54,12 +62,18 @@
     "saving": "Saving...",
     "savedSuccess": "Server \"{{name}}\" added successfully",
     "connectionTestFailed": "Connection test failed",
-    "saveFailed": "Failed to save server"
+    "saveFailed": "Failed to save server",
+    "uploadKey": "Upload Key File",
+    "replaceKey": "Replace",
+    "uploadingKey": "Uploading...",
+    "uploadKeyFailed": "Failed to upload key file",
+    "keyFileTooLarge": "Key file too large (max 16 KB)"
   },
   "editServer": {
     "title": "Edit Server",
     "retestRequired": "Connection fields changed. Re-test required before saving.",
-    "savedSuccess": "Server \"{{name}}\" updated successfully"
+    "savedSuccess": "Server \"{{name}}\" updated successfully",
+    "passwordUnchanged": "unchanged"
   },
   "deleteServer": {
     "title": "Delete Server",
@@ -76,6 +90,10 @@
   },
   "connection": {
     "lost": "Connection lost, reconnecting..."
+  },
+  "networkChart": {
+    "noInterfaces": "No network interfaces",
+    "waitingForData": "Waiting for data..."
   },
   "processTable": {
     "pid": "PID",
@@ -95,6 +113,51 @@
   },
   "language": {
     "label": "Language"
+  },
+  "auth": {
+    "setupTitle": "Set Up Password",
+    "setupHint": "Create a password to protect your Belochka dashboard.",
+    "loginHint": "Enter your password to continue.",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "oldPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmNewPassword": "Confirm New Password",
+    "setPassword": "Set Password",
+    "settingUp": "Setting up...",
+    "login": "Login",
+    "loggingIn": "Logging in...",
+    "logout": "Logout",
+    "changePassword": "Change Password",
+    "changingPassword": "Changing...",
+    "showPassword": "Show password",
+    "fillAllFields": "Please fill in all fields.",
+    "passwordsDontMatch": "Passwords do not match.",
+    "unknownError": "An unexpected error occurred.",
+    "lockedOut": "Locked out ({{seconds}}s)",
+    "passwordChanged": "Password changed successfully.",
+    "passwordChangeFailed": "Failed to change password.",
+    "incorrectPassword": "Current password is incorrect.",
+    "passwordTooShort": "Password must be at least 6 characters.",
+    "loggedOut": "Logged out successfully."
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "logPath": "Log Path",
+    "logPathPlaceholder": "Platform default",
+    "logRetentionDays": "Log Retention (days)",
+    "port": "Port",
+    "dataDir": "Data Directory",
+    "save": "Save",
+    "saving": "Saving...",
+    "savedSuccess": "Settings saved",
+    "saveFailed": "Failed to save settings",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "restartRequired": "These settings require a restart to take effect:"
   },
   "cronJobs": {
     "tabOverview": "Overview",

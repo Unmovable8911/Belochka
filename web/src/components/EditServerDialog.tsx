@@ -186,7 +186,8 @@ export function EditServerDialog({
           fingerprintTrusted={fingerprintTrusted}
           onTrust={trust}
           testError={testError}
-          passwordPlaceholder="unchanged"
+          passwordPlaceholder={t("editServer.passwordUnchanged")}
+          existingKeyPath={server.key_path}
         />
 
         {needsRetest && !testPassed && !testError && !testing && (

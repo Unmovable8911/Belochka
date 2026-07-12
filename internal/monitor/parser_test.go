@@ -343,6 +343,22 @@ const procNetDevCentOS = `Inter-|   Receive                                     
   ens3: 4000000000  3000000    0    0    0     0          0         0 2000000000  1500000    0    0    0     0       0          0
 `
 
+// Sample /proc/net/dev from a Docker host with VPN, KVM, and hand-named bridge.
+const procNetDevDocker = `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  eth0: 1000000    1000    0    0    0     0          0         0   500000    500    0    0    0     0       0          0
+docker0:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+br-29a590b46462:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+veth83f5d1f:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  tun0:  500000    500    0    0    0     0          0         0   300000    300    0    0    0     0       0          0
+ tap0:  100000    100    0    0    0     0          0         0    50000     50    0    0    0     0       0          0
+virbr0:  200000    200    0    0    0     0          0         0   150000    150    0    0    0     0       0          0
+   br0:  300000    300    0    0    0     0          0         0   200000    200    0    0    0     0       0          0
+br-lan:  400000    400    0    0    0     0          0         0   250000    250    0    0    0     0       0          0
+ vnet0:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+`
+
 func TestParseNetwork(t *testing.T) {
 	t.Run("ubuntu multi-interface", func(t *testing.T) {
 		net, err := ParseNetwork(procNetDevUbuntu)
@@ -350,26 +366,14 @@ func TestParseNetwork(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(net.Interfaces) != 4 {
-			t.Fatalf("interface count = %d, want 4", len(net.Interfaces))
+		if len(net.Interfaces) != 2 {
+			t.Fatalf("interface count = %d, want 2", len(net.Interfaces))
 		}
 
-		// lo
-		lo := net.Interfaces[0]
-		if lo.Name != "lo" {
-			t.Errorf("iface 0 name = %q, want %q", lo.Name, "lo")
-		}
-		if lo.RxBytes != 1234567890 {
-			t.Errorf("lo rx = %d, want %d", lo.RxBytes, 1234567890)
-		}
-		if lo.TxBytes != 1234567890 {
-			t.Errorf("lo tx = %d, want %d", lo.TxBytes, 1234567890)
-		}
-
-		// eth0
-		eth0 := net.Interfaces[1]
+		// eth0 (lo and docker0 filtered as virtual)
+		eth0 := net.Interfaces[0]
 		if eth0.Name != "eth0" {
-			t.Errorf("iface 1 name = %q, want %q", eth0.Name, "eth0")
+			t.Errorf("iface 0 name = %q, want %q", eth0.Name, "eth0")
 		}
 		if eth0.RxBytes != 98765432100 {
 			t.Errorf("eth0 rx = %d, want %d", eth0.RxBytes, 98765432100)
@@ -378,10 +382,10 @@ func TestParseNetwork(t *testing.T) {
 			t.Errorf("eth0 tx = %d, want %d", eth0.TxBytes, 54321098765)
 		}
 
-		// docker0
-		docker := net.Interfaces[3]
-		if docker.Name != "docker0" {
-			t.Errorf("iface 3 name = %q, want %q", docker.Name, "docker0")
+		// eth1
+		eth1 := net.Interfaces[1]
+		if eth1.Name != "eth1" {
+			t.Errorf("iface 1 name = %q, want %q", eth1.Name, "eth1")
 		}
 	})
 
@@ -391,19 +395,50 @@ func TestParseNetwork(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(net.Interfaces) != 2 {
-			t.Fatalf("interface count = %d, want 2", len(net.Interfaces))
+		// lo filtered as virtual; only ens3 remains
+		if len(net.Interfaces) != 1 {
+			t.Fatalf("interface count = %d, want 1", len(net.Interfaces))
 		}
 
-		ens3 := net.Interfaces[1]
+		ens3 := net.Interfaces[0]
 		if ens3.Name != "ens3" {
-			t.Errorf("iface 1 name = %q, want %q", ens3.Name, "ens3")
+			t.Errorf("iface 0 name = %q, want %q", ens3.Name, "ens3")
 		}
 		if ens3.RxBytes != 4000000000 {
 			t.Errorf("ens3 rx = %d, want %d", ens3.RxBytes, 4000000000)
 		}
 		if ens3.TxBytes != 2000000000 {
 			t.Errorf("ens3 tx = %d, want %d", ens3.TxBytes, 2000000000)
+		}
+	})
+
+	t.Run("docker host filters virtual, keeps tunnels and named bridges", func(t *testing.T) {
+		net, err := ParseNetwork(procNetDevDocker)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Expected kept: eth0, tun0, tap0, virbr0, br0, br-lan (6 interfaces)
+		// Filtered out: lo, docker0, br-29a590b46462, veth83f5d1f, vnet0
+		if len(net.Interfaces) != 6 {
+			t.Fatalf("interface count = %d, want 6", len(net.Interfaces))
+		}
+
+		kept := make(map[string]bool)
+		for _, iface := range net.Interfaces {
+			kept[iface.Name] = true
+		}
+
+		for _, name := range []string{"eth0", "tun0", "tap0", "virbr0", "br0", "br-lan"} {
+			if !kept[name] {
+				t.Errorf("expected %q to be kept, but it was filtered", name)
+			}
+		}
+
+		for _, name := range []string{"lo", "docker0", "br-29a590b46462", "veth83f5d1f", "vnet0"} {
+			if kept[name] {
+				t.Errorf("expected %q to be filtered, but it was kept", name)
+			}
 		}
 	})
 

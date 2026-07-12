@@ -196,9 +196,10 @@ describe("Dashboard Server Cards", () => {
     expect(diskBar).toBeInTheDocument()
   })
 
-  // --- Slice 5: Network — aggregated physical interfaces only ---
+  // --- Slice 5: Network — aggregated throughput from all interfaces ---
+  // (backend filters virtual interfaces; frontend trusts the data it receives)
 
-  it("shows aggregated network throughput from physical interfaces only", () => {
+  it("shows aggregated network throughput across all interfaces", () => {
     const state: MonitorState = {
       ...initialMonitorState,
       servers: [makeServer({ id: "srv-1" })],
@@ -208,12 +209,6 @@ describe("Dashboard Server Cards", () => {
             interfaces: [
               { name: "eth0", rxBytesPerSec: 1000000, txBytesPerSec: 500000 },
               { name: "eth1", rxBytesPerSec: 2000000, txBytesPerSec: 1000000 },
-              // Virtual interfaces — should be excluded
-              { name: "lo", rxBytesPerSec: 999999, txBytesPerSec: 999999 },
-              { name: "docker0", rxBytesPerSec: 888888, txBytesPerSec: 888888 },
-              { name: "veth1234", rxBytesPerSec: 777777, txBytesPerSec: 777777 },
-              { name: "br-abcdef", rxBytesPerSec: 666666, txBytesPerSec: 666666 },
-              { name: "virbr0", rxBytesPerSec: 555555, txBytesPerSec: 555555 },
             ],
           },
         }),
@@ -221,7 +216,7 @@ describe("Dashboard Server Cards", () => {
     }
     renderDashboard(state)
 
-    // Aggregated physical: RX = 1000000 + 2000000 = 3000000 = 3.0 MB/s
+    // Aggregated: RX = 1000000 + 2000000 = 3000000 = 3.0 MB/s
     // TX = 500000 + 1000000 = 1500000 = 1.5 MB/s
     expect(screen.getByText("Network")).toBeInTheDocument()
     expect(screen.getByText(/3\.0 MB\/s/)).toBeInTheDocument()

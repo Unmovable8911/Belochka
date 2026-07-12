@@ -44,18 +44,18 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-            output: belochka-linux-amd64
+            output: belochka-${{ github.ref_name }}-linux-amd64
           - goos: linux
             goarch: arm64
-            output: belochka-linux-arm64
+            output: belochka-${{ github.ref_name }}-linux-arm64
           - goos: windows
             goarch: amd64
             ldextra: ' -H windowsgui'
-            output: belochka-windows-x86-64.exe
+            output: belochka-${{ github.ref_name }}-windows-x86-64.exe
           - goos: windows
             goarch: '386'
             ldextra: ' -H windowsgui'
-            output: belochka-windows-x86.exe
+            output: belochka-${{ github.ref_name }}-windows-x86.exe
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -113,7 +113,7 @@ jobs:
             echo "## Changes"
             echo
             if [ -n "$prev" ]; then
-              git log --no-merges --pretty='- %s' "${prev}..${tag}"
+              git log --no-merges --pretty='- %B' "${prev}..${tag}"
               echo
               echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${prev}...${tag}"
             else
@@ -126,8 +126,8 @@ jobs:
         with:
           body_path: CHANGELOG_RELEASE.md
           files: |
-            bin/belochka-linux-amd64
-            bin/belochka-linux-arm64
-            bin/belochka-windows-x86-64.exe
-            bin/belochka-windows-x86.exe
+            bin/belochka-${{ github.ref_name }}-linux-amd64
+            bin/belochka-${{ github.ref_name }}-linux-arm64
+            bin/belochka-${{ github.ref_name }}-windows-x86-64.exe
+            bin/belochka-${{ github.ref_name }}-windows-x86.exe
             bin/checksums.txt

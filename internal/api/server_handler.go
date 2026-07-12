@@ -27,11 +27,17 @@ type SSHTester interface {
 	TestConnection(srv model.Server) (ssh.TestResult, error)
 }
 
+// Reconnecter triggers a reconnection for a server and returns its status.
+type Reconnecter interface {
+	Reconnect(ctx context.Context, serverID string) ssh.ConnStatus
+}
+
 // serverHandler handles server CRUD and test endpoints.
 type serverHandler struct {
-	store    ServerStore
-	tester   SSHTester
-	onChange func()
+	store       ServerStore
+	tester      SSHTester
+	reconnecter Reconnecter
+	onChange    func()
 }
 
 func (h *serverHandler) notifyChange() {
@@ -64,6 +70,8 @@ type serverResponse struct {
 	UpdatedAt          string          `json:"updated_at"`
 }
 
+const timeFormat = "2006-01-02T15:04:05Z"
+
 func toServerResponse(srv model.Server) serverResponse {
 	return serverResponse{
 		ID:                 srv.ID,
@@ -74,8 +82,8 @@ func toServerResponse(srv model.Server) serverResponse {
 		Username:           srv.Username,
 		KeyPath:            srv.KeyPath,
 		HostKeyFingerprint: srv.HostKeyFingerprint,
-		CreatedAt:          srv.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:          srv.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:          srv.CreatedAt.Format(timeFormat),
+		UpdatedAt:          srv.UpdatedAt.Format(timeFormat),
 	}
 }
 
@@ -222,6 +230,24 @@ func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *serverHandler) reconnect(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// Verify the server exists in the store.
+	_, err := h.store.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, model.ErrServerNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "Server not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
+		return
+	}
+
+	status := h.reconnecter.Reconnect(r.Context(), id)
+	writeJSON(w, http.StatusOK, status)
 }
 
 func validateServer(srv model.Server) []string {

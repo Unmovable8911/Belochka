@@ -1,9 +1,9 @@
 import { useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Terminal, Trash2, Pencil } from "lucide-react"
+import { ArrowLeft, Terminal, Trash2, Pencil, Loader2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useMonitorState } from "@/hooks/useMonitorState"
-import { formatBytes, formatNetworkSpeed, formatPercent, formatUptime } from "@/lib/format"
+import { formatBytes, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { DeleteServerDialog } from "@/components/DeleteServerDialog"
 import { EditServerDialog } from "@/components/EditServerDialog"
@@ -11,11 +11,12 @@ import { toast } from "sonner"
 import type { Server } from "@/types/server"
 import * as api from "@/api/client"
 import { CronJobsTab } from "@/components/CronJobsTab"
-import { LanguageSwitcher } from "@/components/LanguageSwitcher"
-import { ThemeToggle } from "@/components/ThemeToggle"
+import { SettingsDialog } from "@/components/SettingsDialog"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
+import { CoreBar } from "@/components/CoreBar"
 import { ProcessTable } from "@/components/ProcessTable"
+import { NetworkChart } from "@/components/NetworkChart"
 
 type Tab = "overview" | "crons"
 
@@ -29,8 +30,21 @@ export default function ServerDetail() {
   const [fullServer, setFullServer] = useState<Server | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
+  const [reconnecting, setReconnecting] = useState(false)
 
   const server = state.servers.find((s) => s.id === id)
+
+  async function handleReconnect() {
+    if (!id) return
+    setReconnecting(true)
+    try {
+      await api.reconnectServer(id)
+    } catch {
+      toast.error(t("serverCard.reconnectFailed"))
+    } finally {
+      setReconnecting(false)
+    }
+  }
 
   async function handleEditClick() {
     try {
@@ -38,7 +52,7 @@ export default function ServerDetail() {
       setFullServer(s)
       setEditOpen(true)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load server")
+      toast.error(err instanceof Error ? err.message : t("serverDetail.failedToLoad"))
     }
   }
   const metrics = id ? state.metrics[id] : undefined
@@ -77,6 +91,18 @@ export default function ServerDetail() {
             <Pencil className="size-4 mr-1" />
             {t("serverDetail.edit")}
           </Button>
+          {server.status === "failed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={reconnecting}
+              onClick={handleReconnect}
+              className="cursor-pointer hover:brightness-110 hover:scale-105 transition-all"
+            >
+              {reconnecting && <Loader2 className="size-3 animate-spin" />}
+              {t("serverCard.reconnect")}
+            </Button>
+          )}
           <Button
             variant="default"
             size="sm"
@@ -95,8 +121,7 @@ export default function ServerDetail() {
             <Trash2 className="size-4 mr-1" />
             {t("serverDetail.delete")}
           </Button>
-          <LanguageSwitcher />
-          <ThemeToggle />
+          <SettingsDialog />
         </div>
       </div>
 
@@ -172,24 +197,25 @@ export default function ServerDetail() {
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">{t("serverDetail.cores")}</div>
-                <div className="text-sm font-medium">{system.coreCount} cores</div>
+                <div className="text-sm font-medium">{t("serverDetail.coresCount", { count: system.coreCount })}</div>
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="metrics-grid">
             {metrics?.cpu && (
-              <div className="rounded-lg border bg-card p-4">
-                <h2 className="text-lg font-semibold mb-4">{t("serverDetail.cpu")}</h2>
-                <div className="flex flex-col items-center gap-6 md:flex-row md:items-start">
-                  <RingGauge value={metrics.cpu.aggregate.usagePercent} testId="cpu-ring-gauge" />
-                  <div className="flex-1 w-full space-y-2">
+              <div className="rounded-lg border bg-card p-4 h-72 flex flex-col overflow-hidden">
+                <h2 className="text-lg font-semibold mb-4 shrink-0">{t("serverDetail.cpu")}</h2>
+                <div className="flex flex-col items-center gap-6 md:flex-row md:items-stretch flex-1 min-h-0">
+                  <div className="shrink-0 self-start">
+                    <RingGauge value={metrics.cpu.aggregate.usagePercent} testId="cpu-ring-gauge" />
+                  </div>
+                  <div className="flex-1 w-full overflow-y-auto min-h-0 scrollbar-hidden flex flex-wrap gap-x-4 gap-y-2 content-start">
                     {metrics.cpu.cores.map((core, index) => (
-                      <UsageBar
+                      <CoreBar
                         key={core.name ?? index}
                         label={`Core ${index}`}
                         value={core.usagePercent}
-                        rightText={formatPercent(core.usagePercent)}
                         ariaLabel={`Core ${index} usage`}
                       />
                     ))}
@@ -199,9 +225,9 @@ export default function ServerDetail() {
             )}
 
             {metrics?.memory && (
-              <div className="rounded-lg border bg-card p-4">
-                <h2 className="text-lg font-semibold mb-4">{t("serverDetail.memory")}</h2>
-                <div className="flex flex-col items-center gap-4">
+              <div className="rounded-lg border bg-card p-4 h-72 flex flex-col overflow-hidden">
+                <h2 className="text-lg font-semibold mb-4 shrink-0">{t("serverDetail.memory")}</h2>
+                <div className="flex-1 overflow-y-auto min-h-0 scrollbar-hidden flex flex-col items-center gap-4">
                   <RingGauge
                     value={metrics.memory.total > 0 ? (metrics.memory.used / metrics.memory.total) * 100 : 0}
                     testId="memory-ring-gauge"
@@ -219,17 +245,17 @@ export default function ServerDetail() {
             )}
 
             {metrics?.disk && (
-              <div className="rounded-lg border bg-card p-4">
-                <h2 className="text-lg font-semibold mb-4">{t("serverDetail.disk")}</h2>
-                <div className="space-y-3">
+              <div className="rounded-lg border bg-card p-4 h-72 flex flex-col overflow-hidden">
+                <h2 className="text-lg font-semibold mb-4 shrink-0">{t("serverDetail.disk")}</h2>
+                <div className="flex-1 overflow-y-auto min-h-0 scrollbar-hidden space-y-3">
                   {metrics.disk.partitions.map((partition) => {
                     const pct = partition.total > 0 ? (partition.used / partition.total) * 100 : 0
                     return (
                       <UsageBar
                         key={partition.mountPoint}
-                        label={partition.mountPoint}
+                        label={`${partition.mountPoint} (${partition.filesystem.replace("/dev/", "")})`}
                         value={pct}
-                        rightText={`${formatBytes(partition.used)} / ${formatBytes(partition.total)}`}
+                        rightText={`${formatBytes(partition.used)} / ${formatBytes(partition.total)} (${pct.toFixed(1)}%)`}
                         ariaLabel={`${partition.mountPoint} usage`}
                       />
                     )
@@ -239,19 +265,9 @@ export default function ServerDetail() {
             )}
 
             {metrics?.network && (
-              <div className="rounded-lg border bg-card p-4" data-testid="network-section">
-                <h2 className="text-lg font-semibold mb-4">{t("serverDetail.network")}</h2>
-                <div className="space-y-3">
-                  {metrics.network.interfaces.map((iface) => (
-                    <div key={iface.name} className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{iface.name}</span>
-                      <div className="flex gap-4">
-                        <span>RX: {formatNetworkSpeed(iface.rxBytesPerSec)}</span>
-                        <span>TX: {formatNetworkSpeed(iface.txBytesPerSec)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="rounded-lg border bg-card p-4 h-72 flex flex-col overflow-hidden" data-testid="network-section">
+                <h2 className="text-lg font-semibold shrink-0">{t("serverDetail.network")}</h2>
+                <NetworkChart interfaces={metrics.network.interfaces} />
               </div>
             )}
           </div>

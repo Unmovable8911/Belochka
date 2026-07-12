@@ -2,15 +2,17 @@
 
 ## Project Summary
 - **Description**: Single-binary Go+React web app for managing 5-20 remote Linux servers via persistent SSH connections. Streams CPU/memory/disk/network/process metrics to a browser dashboard over WebSocket, and provides a web-based interactive terminal (SSH console) for direct server access.
+- **Security scope**: Password + session cookie authentication via bcrypt. First-run setup flow forces password creation at `/setup`. Protected routes (all `/api/*` except health/login/setup/auth-status, plus WebSocket) require a valid session cookie (7-day absolute expiry). Login rate-limits by IP: 10 failures → 30-minute lockout. Changing password clears all sessions.
 - **Tech Stack**: Go 1.25, React 19, TypeScript 6, Vite 8, Tailwind CSS 4, chi router, gorilla/websocket, modernc.org/sqlite, Radix UI, Lucide icons
 - **Entry Points**: `cmd/server/main.go` (Go backend), `web/src/main.tsx` (React frontend)
 
 ## Directory Structure
 ```
-cmd/server/          — CLI entry point: flags (--config, --no-tray, --version), logging init, tray/CLI mode branch
+cmd/server/          — CLI entry point: flags (--config, --no-tray, --version), baseDir computation, logging init, tray/CLI mode branch
 assets/              — Embedded tray icon: icon.png (128×128, Linux/macOS) + icon.ico (Windows), selected by build tag (icon_other.go / icon_windows.go)
 internal/app/        — Application lifecycle: wires all components, Start/Shutdown orchestration
-internal/api/        — HTTP router, REST endpoints (server CRUD), health check
+internal/api/        — HTTP router, REST endpoints (server CRUD), health check, config handler
+internal/auth/       — Session store, bcrypt password hashing, rate limiting, chi middleware, auth HTTP handlers
 internal/hub/        — WebSocket hub: client registry, broadcast, connection upgrade
 internal/broadcast/  — Assembles server info + metrics into JSON wire format for WS clients
 internal/logging/    — Persistent log file writer; tee mode (CLI) mirrors output to stdout; retention-based cleanup
@@ -19,14 +21,15 @@ internal/cron/       — Crontab parsing and line building utilities
 internal/ssh/        — SSH connection pool, reconnection with exponential backoff, keepalive
 internal/store/      — SQLite persistence with AES-encrypted password storage
 internal/model/      — Domain types: Server, Metrics, Snapshot, CPU/Memory/Disk/Network/Process
-internal/config/     — YAML config loading with env var override
+internal/config/     — JSON config loading with binary-relative path resolution
 internal/clock/      — Clock interface for deterministic testing
 internal/shutdown/   — Ordered graceful shutdown sequence
 internal/static/     — SPA file server with index.html fallback
 internal/terminal/   — Web terminal: WebSocket-SSH bridge with PTY, resize, session lifecycle
+internal/wsutil/     — Shared WebSocket origin check used by hub and terminal
 web/                 — React frontend (Vite build), embedded into Go binary via embed.go
 web/src/pages/       — Dashboard, ServerDetail, and Console (web terminal) pages
-web/src/components/  — UI components: ServerCard, AddServerDialog, AddCronDialog, WebSocketProvider, Layout, LanguageSwitcher, RingGauge, etc.
+web/src/components/  — UI components: ServerCard, AddServerDialog, AddCronDialog, WebSocketProvider, Layout, SettingsDialog, RingGauge, NetworkChart, etc.
 web/src/hooks/       — useMonitorState: WebSocket message state management
 web/src/api/         — REST API client (client.ts)
 web/src/types/       — Single home for frontend wire/domain types: server/cron REST shapes plus the WebSocket metric domain types (CPU/Memory/Disk/Network/Process/System, ServerMetrics, ServerInfo); imported by hooks and components alike
@@ -37,8 +40,8 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 ## Modules
 
 ### cmd/server
-- **Purpose**: CLI entry point. Parses flags (`--config`, `--no-tray`, `--version`), initialises `internal/logging`, creates and starts the Application, then branches: tray mode (`hasDesktop() && !--no-tray`) gives the main goroutine to `systray.Run`; CLI mode waits for SIGTERM/SIGINT and calls graceful shutdown.
-- **Key Files**: `cmd/server/main.go` (also `logFilePath()` → `os.UserCacheDir()/belochka/belochka.log`), `cmd/server/tray.go` (systray entry, openBrowser — reaps child via `cmd.Wait()`), `cmd/server/desktop.go` (hasDesktop — Linux/BSD, checks DISPLAY/WAYLAND_DISPLAY), `cmd/server/desktop_darwin.go` (hasDesktop — macOS, always true), `cmd/server/desktop_windows.go` (hasDesktop — Windows, always true)
+- **Purpose**: CLI entry point. Computes `baseDir` from `os.Executable()` (detects `go run` via `/tmp/go-build` prefix → falls back to CWD). Parses flags (`--config`, `--no-tray`, `--version`), passes `baseDir` to `config.Load()`, `config.ConfigFilePath()`/`config.LogFilePath()`/`config.ResolvePath()`, and `app.New()` for binary-relative path resolution. Initialises `internal/logging`, creates and starts the Application, then branches: tray mode (`hasDesktop() && !--noTray`) gives the main goroutine to `systray.Run`; CLI mode waits for SIGTERM/SIGINT and calls graceful shutdown.
+- **Key Files**: `cmd/server/main.go` (`baseDir()` function; log path resolved via `config.LogFilePath(baseDir)` → `baseDir/belochka.log` or CWD fallback), `cmd/server/tray.go` (systray entry, openBrowser — reaps child via `cmd.Wait()`), `cmd/server/desktop.go` (hasDesktop — Linux/BSD, checks DISPLAY/WAYLAND_DISPLAY), `cmd/server/desktop_darwin.go` (hasDesktop — macOS, always true), `cmd/server/desktop_windows.go` (hasDesktop — Windows, always true), `cmd/server/rsrc_windows_amd64.syso` + `cmd/server/rsrc_windows_386.syso` (Windows resource files generated by `rsrc` from `assets/icon.ico`; auto-linked by Go into Windows executables for the application icon)
 - **Dependencies**: config, app, logging, assets, fyne.io/systray
 - **Exposes**: `main()` — the compiled binary
 
@@ -49,70 +52,76 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `Icon []byte`
 
 ### internal/logging
-- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). Retention cleanup runs once at construction and at most hourly on `Write` (off the hot path): if the first log line predates the retention window, the file is rewritten dropping expired lines (uses `bufio.Reader`, so no line-length cap; an unparseable first line falls through to a full scan instead of disabling cleanup). Default retention: 3 days; overridden by `BELOCHKA_LOG_RETENTION_DAYS` env var.
+- **Purpose**: Persistent log file writer that satisfies `io.Writer` for `slog.NewTextHandler`. In tee mode (CLI), mirrors output to a secondary writer (stdout). Retention cleanup runs once at construction and at most hourly on `Write` (off the hot path): if the first log line predates the retention window, the file is rewritten dropping expired lines (uses `bufio.Reader`, so no line-length cap; an unparseable first line falls through to a full scan instead of disabling cleanup). Retention is passed as a parameter (from `cfg.LogRetentionDays`); the `BELOCHKA_LOG_RETENTION_DAYS` env var was removed.
 - **Key Files**: `internal/logging/logger.go`
 - **Dependencies**: none
-- **Exposes**: `Logger` struct, `New(path string, tee bool) (*Logger, error)`
+- **Exposes**: `Logger` struct, `New(path string, tee bool, retention time.Duration) (*Logger, error)`
 
 ### internal/app
-- **Purpose**: Top-level application container. Wires hub, store, SSH pool, collector manager, terminal handler, and HTTP server. Manages lifecycle (Start/Shutdown) and periodic metric broadcast loop (2s interval).
+- **Purpose**: Top-level application container. Accepts `baseDir` for binary-relative path resolution: resolves `DataDir` via `config.ResolvePath()` before opening the SQLite store, and passes `baseDir` to `config.NewStore()` for runtime path display. On first run (no existing config file), writes default config to `configPath` so users have a configuration file to edit. Stores resolved `dataDir` for key file upload and orphan cleanup. Creates `auth.SessionStore` (backed by `config.Store` as `PasswordStore`) and `auth.Handler`, passes both to router via `WithAuth`. Wires hub, store, SSH pool, collector manager, terminal handler, config store, and HTTP server. Wires `pool` as `Reconnecter` (`WithReconnecter`), `CronExecutor`, and `CronRunner`; wires `configStore` as `ConfigStore`, `LangStore`, and `PasswordStore`. Sets collector `OnFailureThreshold` callback to `pool.TriggerReconnect`. Manages lifecycle (Start/Shutdown) and periodic metric broadcast loop (2s interval). Reads `BELOCHKA_ENCRYPTION_KEY` from env directly for SQLite encryption.
 - **Key Files**: `internal/app/app.go`
-- **Dependencies**: api, broadcast, config, hub, model, monitor, shutdown, ssh, store, terminal, web (wires `pool` as `CronExecutor` and `CronRunner`)
-- **Exposes**: `Application` struct with `New()`, `Start()`, `Shutdown()`, `Addr()`
+- **Dependencies**: api, auth, broadcast, clock, config, hub, model, monitor, shutdown, ssh, store, terminal, web
+- **Exposes**: `Application` struct with `New(cfg Config, configPath string, baseDir string)`, `Start()`, `Shutdown()`, `Addr()`
 
 ### internal/api
-- **Purpose**: HTTP routing and REST API handlers. Mounts server CRUD endpoints, a stateless connection-test endpoint, health check, WebSocket upgrade, terminal WebSocket endpoint, cron CRUD endpoints, and static file serving. Cron handlers delegate the entire crontab read-modify-write **and run-by-index** workflow to `cron.Service` (constructed in `NewRouter` from the injected `cron.Executor` and `CronRunner`); they only parse requests and map `cron.ErrCronIndexOutOfRange` → 404 and SSH errors → 502 (`runCron` calls `Service.Run`, carrying no index-bounds or entry-resolution logic).
-- **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`, `internal/api/cron_handler.go`
-- **Dependencies**: hub, model, ssh, static, terminal, cron
-- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalHandler`, `WithCronExecutor`, `WithCronRunner`); `ServerStore`, `SSHTester`, `CronRunner` interfaces (`WithCronExecutor` accepts a `cron.Executor`). Routes: `GET/POST /api/servers/{id}/crons`, `PUT/DELETE /api/servers/{id}/crons/{index}`, `POST /api/servers/{id}/crons/{index}/run`.
+- **Purpose**: HTTP routing and REST API handlers. Routes are split into public (health, login, setup, auth-status) and protected (`r.Group()` with `auth.Middleware` wrapping all other `/api/*` + WebSocket). Mounts server CRUD endpoints, a stateless connection-test endpoint, a manual reconnect endpoint (`POST /api/servers/{id}/reconnect` → `Pool.Reconnect`), WebSocket upgrade, terminal WebSocket endpoint, cron CRUD endpoints, config GET/PATCH endpoint (password_hash excluded from GET, rejected in PATCH), key file upload endpoint, and static file serving. Cron handlers delegate the entire crontab read-modify-write **and run-by-index** workflow to `cron.Service`. Config handler delegates to injected `ConfigStore` (satisfied by `config.Store`), using `BaseDir()` to resolve relative paths at display time. Language store is threaded to `static.NewHandler` via `WithLangStore`.
+- **Key Files**: `internal/api/router.go`, `internal/api/server_handler.go`, `internal/api/cron_handler.go`, `internal/api/config_handler.go`, `internal/api/file_handler.go`
+- **Dependencies**: hub, model, ssh, static, terminal, cron, config, auth
+- **Exposes**: `NewRouter()` with functional options (`WithServerStore`, `WithSSHTester`, `WithStaticFS`, `WithOnServerChange`, `WithTerminalHandler`, `WithCronExecutor`, `WithCronRunner`, `WithConfigStore`, `WithLangStore`, `WithKeyFileDir`, `WithReconnecter`, `WithAuth`); `ServerStore`, `SSHTester`, `Reconnecter` interfaces; `HandleUploadKey(keyDir)` — `POST /api/files/key` handler (multipart upload, `ssh.ParsePrivateKey` validation, UUID-named files in `dataDir/keys/` with `0600` perms).
 
 ### internal/cron
 - **Purpose**: Crontab parsing/building plus the read-modify-write orchestration over SSH. `cron.go` parses crontab output into enabled/disabled entries and passthrough lines (comments, env vars), builds lines with the `#[disabled] ` prefix convention, and provides `ReplaceCronEntry` for in-place replacement/deletion by zero-based index. `service.go` holds a `Service` that reads (`crontab -l 2>/dev/null || true`) and writes (base64 → `crontab -`) the remote crontab, encapsulating the full List/Create/Update/Delete/**Run** workflow so the API layer carries no shell/base64/index-resolution details. `Service.Run` resolves an entry by index (returning `ErrCronIndexOutOfRange` when out of range) and executes its command via the injected `Runner`.
 - **Key Files**: `internal/cron/cron.go` (parsing/building), `internal/cron/service.go` (Service: SSH read-modify-write + run-by-index orchestration)
 - **Dependencies**: none (Service depends on injected `Executor` and `Runner` interfaces, both satisfied by `ssh.Pool`)
-- **Exposes**: `CronEntry` (schedule fields + command + enabled flag), `CronResult` (entries + passthroughs), `ParseCrontab()`, `BuildLine()`, `BuildCronLine()`, `ReplaceCronEntry()`; `Service` with `NewService(executor, runner)`, `List()`, `Create()`, `Update()`, `Delete()`, `Run()`; `Executor` and `Runner` interfaces; `ErrCronIndexOutOfRange` sentinel (matched via `errors.Is` in `api` → HTTP 404)
+- **Exposes**: `CronEntry` (schedule fields + command + enabled flag), `CronResult` (entries + passthroughs), `ParseCrontab()`, `BuildLine()`, `ReplaceCronEntry()`; `Service` with `NewService(executor, runner)`, `List()`, `Create()`, `Update()`, `Delete()`, `Run()`; `Executor` and `Runner` interfaces; `ErrCronIndexOutOfRange` sentinel (matched via `errors.Is` in `api` → HTTP 404)
+
+### internal/auth
+- **Purpose**: Password-based authentication with session cookies. Manages session lifecycle (create/validate/delete/expire-cleanup), bcrypt password hashing and verification, and IP-based login rate limiting (10 failures → 30-min lockout). The `PasswordStore` interface (implemented by `config.Store`) decouples hash persistence from session logic.
+- **Key Files**: `internal/auth/session.go` (SessionStore, bcrypt, rate-limit maps), `internal/auth/middleware.go` (chi middleware — cookie validation → 401), `internal/auth/handler.go` (HTTP handlers: setup/login/logout/auth-status/change-password)
+- **Dependencies**: clock, config (via PasswordStore interface), golang.org/x/crypto/bcrypt
+- **Exposes**: `SessionStore`, `Handler`, `Middleware()`, `PasswordStore` interface, `HashPassword()`, `VerifyPassword()`, `ErrCurrentPasswordIncorrect`, `ErrPasswordsDoNotMatch`, `ErrPasswordTooShort` (sentinel errors mapped to API error codes by handler)
 
 ### internal/hub
-- **Purpose**: WebSocket client management. Handles upgrade, registration, broadcast fan-out, connection limits (max 10), and graceful close with 1001 Going Away frame.
+- **Purpose**: WebSocket client management. Handles upgrade (with same-origin/localhost origin check), registration, broadcast fan-out, connection limits (max 10), and graceful close with 1001 Going Away frame.
 - **Key Files**: `internal/hub/hub.go`
-- **Dependencies**: gorilla/websocket
+- **Dependencies**: gorilla/websocket, wsutil
 - **Exposes**: `Hub` struct with `New()`, `Run()`, `ServeWS()`, `BroadcastMsg()`, `SetSnapshot()`, `ClientCount()`; `Envelope` wire format
 
 ### internal/broadcast
-- **Purpose**: Assembles server connection state and metric snapshots into the JSON wire format sent to WebSocket clients.
+- **Purpose**: Assembles server connection state and metric snapshots into the JSON wire format sent to WebSocket clients. Uses `snap.AggregateCPU` and `snap.Cores` (no positional indexing).
 - **Key Files**: `internal/broadcast/broadcast.go`, `internal/broadcast/wire.go`
 - **Dependencies**: model
 - **Exposes**: `Assemble()` function, `ServerInfo` struct
 
 ### internal/monitor
-- **Purpose**: Metrics collection engine. Builds a combined SSH command that reads /proc/stat, /proc/meminfo, df, /proc/net/dev, top, hostname, uname, uptime, os-release, nproc in a single exec. Parses output into domain types. Computes CPU usage deltas and network rates between consecutive readings. Manager coordinates per-server Collector goroutines.
-- **Key Files**: `internal/monitor/collector.go` (Collector, Manager, delta computation), `internal/monitor/parser.go` (ParseCPU, ParseMemory, ParseDisk, ParseNetwork, ParseProcesses, ParseSystemInfo)
+- **Purpose**: Metrics collection engine. Builds a combined SSH command that reads /proc/stat, /proc/meminfo, df, /proc/net/dev, top, hostname, uname, uptime, os-release, nproc in a single exec. Parses output into domain types. Computes CPU usage deltas and network rates between consecutive readings. Manager coordinates per-server Collector goroutines. After 3 consecutive collection failures, Collector fires `OnFailureThreshold` callback (hook for SSH reconnection). Log level downgrades from WARN to DEBUG after 5 consecutive failures to avoid log spam when the connection is permanently dead.
+- **Key Files**: `internal/monitor/collector.go` (Collector, Manager, collection loop, failure counting/threshold), `internal/monitor/command.go` (CollectCommand, ParseCombinedOutput dispatcher, ComputeCPUUsage, ComputeNetworkRates), `internal/monitor/parser.go` (ParseCPU, ParseMemory, ParseDisk, ParseNetwork, ParseProcesses, ParseSystemInfo)
 - **Dependencies**: clock, model
-- **Exposes**: `Manager` (Add/Remove/Latest/StopAll), `Collector`, `SSHExecutor` interface, `CollectCommand()`, `ParseCombinedOutput()`, individual parsers, `ComputeCPUUsage()`, `ComputeNetworkRates()`
+- **Exposes**: `Manager` (Add/Remove/Latest/StopAll/SetOnFailureThreshold), `Collector`, `SSHExecutor` interface, `CollectCommand()`, `ParseCombinedOutput()`, individual parsers, `ComputeCPUUsage()`, `ComputeNetworkRates()`
 
 ### internal/ssh
-- **Purpose**: Persistent SSH connection pool with automatic reconnection (exponential backoff 1s→30s), keepalive pings (30s interval, 3-failure threshold), and classified error types (auth, host key, network, passphrase).
-- **Key Files**: `internal/ssh/pool.go` (Pool, managed connections), `internal/ssh/reconnect.go` (Reconnector, Keepalive), `internal/ssh/ssh.go` (TestConnection, auth builder, error classification)
+- **Purpose**: Persistent SSH connection pool with automatic reconnection (exponential backoff 1s→30s, max 5 retries per cycle, then state=Failed), keepalive pings (30s interval, 3-failure threshold), manual reconnect via `POST /api/servers/{id}/reconnect` → `Pool.Reconnect`, and classified error types (auth, host key, network, passphrase). Non-retryable errors (auth, host key) stop reconnection immediately. Retryable errors stop after 5 attempts (≈31s: 1s→2s→4s→8s→16s).
+- **Key Files**: `internal/ssh/pool.go` (Pool, managed connections, Reconnect, Status, TriggerReconnect), `internal/ssh/reconnect.go` (Reconnector with 5-retry limit, Keepalive, backoff/IsRetryable), `internal/ssh/ssh.go` (TestConnection, auth builder, error classification)
 - **Dependencies**: clock, model, golang.org/x/crypto/ssh
-- **Exposes**: `Pool` (Add/Remove/Execute/OpenSession/RunCommand/Status/TriggerReconnect/CloseAll), `TestConnection()`, `TestResult`, `ConnectionError`, `ErrorKind`, `ConnState`, `ConnStatus`, `ServerProvider` interface. `RunCommand(ctx, serverID, cmd)` runs a single command and returns stdout+stderr combined, exit code, and error (connection failures distinguished from non-zero exit codes via `*gossh.ExitError`).
+- **Exposes**: `Pool` (Add/Remove/Execute/OpenSession/RunCommand/Status/TriggerReconnect/Reconnect/CloseAll), `TestConnection()`, `TestResult`, `ConnectionError`, `ErrorKind`, `ConnState` (connected/reconnecting/failed), `ConnStatus` (state+attempts+last_error), `ServerProvider` interface. `Reconnect(ctx, serverID)` forcefully restarts the connection goroutine (cancels old context, creates new Background context, resets Reconnector, starts fresh goroutine) and returns current status. `TriggerReconnect(serverID)` only acts when state=Connected (no-op during reconnection or after failure). `RunCommand(ctx, serverID, cmd)` runs a single command and returns stdout+stderr combined, exit code, and error (connection failures distinguished from non-zero exit codes via `*gossh.ExitError`). `IsRetryable(err)` classifies errors as retryable (network/timeout) or non-retryable (auth, host key).
 
 ### internal/store
 - **Purpose**: SQLite-based server persistence. Passwords are AES-GCM encrypted at rest. Supports auto-generated or config-provided encryption key. WAL mode enabled.
 - **Key Files**: `internal/store/store.go` (Open, CRUD), `internal/store/crypto.go` (AES-GCM encrypt/decrypt)
 - **Dependencies**: model, modernc.org/sqlite, google/uuid
-- **Exposes**: `SQLiteStore` with `Open()`, `Create()`, `GetByID()`, `List()`, `Update()`, `Delete()`, `Close()`
+- **Exposes**: `SQLiteStore` with `Open()`, `Create()`, `GetByID()`, `List()`, `ListWithoutPasswords()`, `Update()`, `Delete()`, `Close()`, `CleanupOrphanKeys(dataDir)` (removes unreferenced `*.key` files from `dataDir/keys/`)
 
 ### internal/model
 - **Purpose**: Shared domain types used across all backend modules. Raw metrics (jiffy counters, byte counters) and computed snapshots (percentages, rates).
 - **Key Files**: `internal/model/model.go`
 - **Dependencies**: none
-- **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot`, `CPUUsage`, `NetworkRate`; `ErrServerNotFound` sentinel error (wrapped by `store`, matched via `errors.Is` in `api`)
+- **Exposes**: `Server`, `AuthType`, `Metrics`, `CPUMetrics`, `CPUCore`, `MemoryMetrics`, `DiskMetrics`, `DiskPartition`, `NetworkMetrics`, `NetworkInterface`, `Process`, `ProcessMetrics`, `SystemInfo`, `Snapshot` (with explicit `AggregateCPU *CPUUsage` + `Cores []CPUUsage` replacing the old positional `CPU` slice), `CPUUsage`, `NetworkRate`; `ErrServerNotFound` sentinel error (wrapped by `store`, matched via `errors.Is` in `api`)
 
 ### internal/config
-- **Purpose**: Loads YAML config file (default `belochka.yaml`), falls back to built-in defaults (port 53136, data dir `./data`). `BELOCHKA_ENCRYPTION_KEY` env var overrides file value.
-- **Key Files**: `internal/config/config.go`
-- **Dependencies**: gopkg.in/yaml.v3
-- **Exposes**: `Config` struct, `Load()` function
+- **Purpose**: Loads JSON config file (default `config.json`) relative to `baseDir` (the binary's directory), falling back to built-in defaults (port 53136, data dir `./data`). `ConfigFilePath(path, baseDir)` resolves the config file path (the same logic used internally by `Load`) and is also used by `main.go` to determine the path passed to `app.New()` for persistence. Provides `ResolvePath(path, baseDir)` for runtime resolution of relative paths against the binary directory (CWD fallback when `baseDir` is empty). `LogFilePath(baseDir)` returns the default log path under `baseDir` (`baseDir/belochka.log`) instead of the old `os.UserCacheDir()` location. `BELOCHKA_ENCRYPTION_KEY` env var is read directly in `app.go`, not stored in Config. `Store` wraps Config with a mutex, holds `baseDir` for `BaseDir()` access, and provides atomic file writes and thread-safe accessors. Implements `auth.PasswordStore` via `PasswordHash()`/`SetPasswordHash()`.
+- **Key Files**: `internal/config/config.go` (Config struct + Load + ConfigFilePath + LogFilePath + ResolvePath), `internal/config/store.go` (Store, baseDir, atomic JSON write, Language/SetLanguage, PasswordHash/SetPasswordHash)
+- **Dependencies**: none
+- **Exposes**: `Config` struct (fields: `Port`, `DataDir`, `LogPath`, `Language`, `LogRetentionDays`, `PasswordHash`), `Load(path, baseDir)` function, `ConfigFilePath(path, baseDir)` function, `LogFilePath(baseDir)` function, `ResolvePath(path, baseDir)` function; `Store` struct with `NewStore(cfg, path, baseDir)`, `Get()`, `Set()`, `BaseDir()`, `Language()`, `SetLanguage()`, `PasswordHash()`, `SetPasswordHash()`
 
 ### internal/clock
 - **Purpose**: Abstraction over `time.Now()`, `time.NewTicker()`, and context-aware `Sleep()` for deterministic testing.
@@ -127,46 +136,55 @@ web/src/i18n/        — Internationalization: i18next config and translation JS
 - **Exposes**: `Sequence` with `NewSequence()`, `Add()`, `Run()`
 
 ### internal/terminal
-- **Purpose**: Web terminal session lifecycle: bridges a WebSocket connection to an SSH session with PTY. Handles bidirectional data (binary frames), resize control messages (JSON text frames), connection/disconnection status messages, and session tracking for graceful shutdown.
+- **Purpose**: Web terminal session lifecycle: bridges a WebSocket connection (same-origin/localhost origin check) to an SSH session with PTY. Handles bidirectional data (binary frames), resize control messages (JSON text frames), connection/disconnection status messages, and session tracking for graceful shutdown.
 - **Key Files**: `internal/terminal/terminal.go` (Handler, Session interface, WebSocket-SSH bridge), `internal/terminal/adapter.go` (SSHSessionOpener adapter wrapping gossh.Session)
-- **Dependencies**: gorilla/websocket, golang.org/x/crypto/ssh
+- **Dependencies**: gorilla/websocket, golang.org/x/crypto/ssh, wsutil
 - **Exposes**: `Handler` (ServeHTTP/CloseAll), `Session` interface, `SessionOpener` interface, `SSHSessionOpener` adapter, `ServerNotFoundError`
 
-### internal/static
-- **Purpose**: Serves embedded frontend assets with SPA fallback (unknown paths serve index.html). Returns nil handler when no FS is provided (dev mode).
-- **Key Files**: `internal/static/handler.go`
+### internal/wsutil
+- **Purpose**: Shared WebSocket upgrade origin check — allows same-origin (http and https), localhost, and 127.0.0.1 access (including HTTPS variants). Used by both hub and terminal to avoid duplicated security logic.
+- **Key Files**: `internal/wsutil/origin.go`
 - **Dependencies**: none
-- **Exposes**: `NewHandler()` function
+- **Exposes**: `CheckOrigin(r *http.Request) bool`
+
+### internal/static
+- **Purpose**: Serves embedded frontend assets with SPA fallback (unknown paths serve index.html). On every index.html response, injects the active language into `<meta name="app-lang" content="">`. On first visit (empty language in store), detects preferred language from the `Accept-Language` header (supports en/zh/fr/ru, falls back to `"en"`), persists it via `LangStore.SetLanguage()`, then injects it. Returns nil handler when no FS is provided (dev mode).
+- **Key Files**: `internal/static/handler.go`
+- **Dependencies**: config (via `LangStore` interface)
+- **Exposes**: `LangStore` interface (Language/SetLanguage); `NewHandler(fs, langStore) http.Handler`
 
 ### web (frontend)
-- **Purpose**: React SPA dashboard. Three routes: `/` (Dashboard — server card grid with connection status and summary metrics), `/server/:id` (ServerDetail — detailed CPU, memory, disk, network, process views, and Cron Jobs tab with full CRUD + run-now), and `/server/:id/console` (Console — full-page web terminal via xterm.js + WebSocket). Dashboard and detail routes use the shared Layout/WebSocketProvider; console route is standalone. Internationalized with react-i18next supporting English, Chinese (Simplified), French, and Russian.
-- **Key Files**: `web/src/App.tsx` (routes, Layout wrapper), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx` (tabbed: Overview / Cron Jobs — header row has Edit / Console / Delete buttons; Edit fetches full `Server` via `GET /api/servers/:id`, opens `EditServerDialog`, dispatches `update_server` on save; overview renders inline, cron tab delegates to `CronJobsTab`), `web/src/pages/Console.tsx` (web terminal page), `web/src/components/CronJobsTab.tsx` (cron tab UI: table, toggle, run/edit/delete, confirm + run-output dialogs; driven by `useCrons`), `web/src/components/AddServerDialog.tsx` + `web/src/components/EditServerDialog.tsx` (each owns its form data + change-detection, both share the connection-test/fingerprint/save state machine via `useServerForm` and render the shared `ServerForm`), `web/src/components/ServerForm.tsx` (controlled presentational form fields + fingerprint trust block, parameterized by `idPrefix`), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/LanguageSwitcher.tsx`, `web/src/components/AddCronDialog.tsx` (add/edit cron dialog, reused via `editEntry`/`editIndex` props), `web/src/i18n/index.ts` (i18n config), `web/src/i18n/en.json` (English translations, reference for all languages), `web/src/hooks/useMonitorState.ts` (state/reducer/actions/context only; metric domain types now imported from `web/src/types/server.ts`), `web/src/hooks/useCrons.ts` (cron fetch + mutation logic: lazy fetch, optimistic toggle w/ revert, row-error index shifting), `web/src/hooks/useServerForm.ts` (shared connection-test/fingerprint/save state machine for Add/Edit dialogs), `web/src/api/client.ts`, `web/embed.go` (Go embed)
-- **Dependencies**: React 19, react-router-dom, Radix UI, Tailwind CSS, Lucide icons, sonner (toasts), i18next, react-i18next, i18next-browser-languagedetector, @xterm/xterm, @xterm/addon-fit
+- **Purpose**: React SPA dashboard. App component does a one-shot `GET /api/auth/status` on mount and conditionally renders: `loading` (null), `setup` (SetupPage — first-run password creation), `login` (LoginPage — password entry, lockout countdown), or `app` (the full dashboard). Dashboard routes: `/` (Dashboard — server card grid with connection status, summary metrics, and reconnect button on failed servers), `/server/:id` (ServerDetail — detailed CPU, memory, disk, network, process views, reconnect button in header for failed state, and Cron Jobs tab with full CRUD + run-now), and `/server/:id/console` (Console — full-page web terminal via xterm.js + WebSocket). Dashboard and detail routes use the shared Layout/WebSocketProvider; console route is standalone. API client intercepts 401 responses (except auth-status) and redirects to `/login?redirect=<path>`. SettingsDialog includes a change-password section (old + new + confirm). Internationalized with react-i18next supporting English, Chinese (Simplified), French, and Russian.
+- **Key Files**: `web/src/App.tsx` (auth-gated conditional rendering), `web/src/pages/SetupPage.tsx` (password + confirm, min 6 chars), `web/src/pages/LoginPage.tsx` (password + rate-limit countdown), `web/src/pages/Dashboard.tsx`, `web/src/pages/ServerDetail.tsx` (tabbed: Overview / Cron Jobs — header row has Edit / Console / Delete / Settings buttons plus reconnect button when state=failed; Edit fetches full `Server` via `GET /api/servers/:id`, opens `EditServerDialog`, dispatches `update_server` on save; overview renders inline, cron tab delegates to `CronJobsTab`), `web/src/pages/Console.tsx` (web terminal page), `web/src/components/ServerCard.tsx` (card with reconnect button on failed state — `POST /api/servers/{id}/reconnect`, loading spinner, click-bubble prevention), `web/src/components/CronJobsTab.tsx` (cron tab UI: table, toggle, run/edit/delete, confirm + run-output dialogs; driven by `useCrons`), `web/src/components/AddServerDialog.tsx` + `web/src/components/EditServerDialog.tsx` (each owns its form data + change-detection, both share the connection-test/fingerprint/save state machine via `useServerForm` and render the shared `ServerForm`), `web/src/components/ServerForm.tsx` (controlled form fields + fingerprint trust block + SSH key file upload via hidden `<input type="file">`; `existingKeyPath` prop for Edit mode showing current path + Replace button), `web/src/components/WebSocketProvider.tsx`, `web/src/components/Layout.tsx` (global layout shell), `web/src/components/SettingsDialog.tsx` (gear icon trigger; 5-field config form: port, data_dir, language, log_path, log_retention_days; plus client-side theme selector: light/dark/system via next-themes; change-password section; diff-only PATCH, restart-required notice, calls `i18n.changeLanguage` on language save), `web/src/components/NetworkChart.tsx` (SVG line chart for network traffic: RX/TX over 20s rolling window, interface selector dropdown, pure frontend data accumulation), `web/src/components/AddCronDialog.tsx` (add/edit cron dialog, reused via `editEntry`/`editIndex` props), `web/src/i18n/index.ts` (i18n config; reads language from `<meta name="app-lang">` injected by server, no browser detector), `web/src/i18n/en.json` (English translations, reference for all languages; includes `auth`, `settings`, and `serverCard.reconnect` sections), `web/src/hooks/useMonitorState.ts` (state/reducer/actions/context only; metric domain types now imported from `web/src/types/server.ts`), `web/src/hooks/useCrons.ts` (cron fetch + mutation logic: lazy fetch, optimistic toggle w/ revert, row-error index shifting), `web/src/hooks/useServerForm.ts` (shared connection-test/fingerprint/save state machine for Add/Edit dialogs), `web/src/api/client.ts` (includes `getConfig()`, `patchConfig()`, `uploadKeyFile(file)`, `getAuthStatus()`, `login()`, `setup()`, `logout()`, `changePassword()`, `reconnectServer(id)`; 401 interception redirects to `/login`), `web/src/types/server.ts` (includes `AppConfig`, `PatchConfigResponse`, `AuthStatus`, `AuthError`), `web/src/__tests__/reconnect-button.test.tsx` (9 tests: ServerCard/ServerDetail reconnect button visibility + click + loading), `web/index.html` (`<meta name="app-lang" content="">` placeholder for server injection), `web/embed.go` (Go embed)
+- **Dependencies**: React 19, react-router-dom, Radix UI, Tailwind CSS, Lucide icons, sonner (toasts), i18next, react-i18next, @xterm/xterm, @xterm/addon-fit
 - **Exposes**: Embedded filesystem via `web.DistFS()` consumed by Go backend
 
 ## Data Flow
-1. **Config load**: `cmd/server/main.go` reads `belochka.yaml` (or defaults) via `config.Load()`.
-2. **App init**: `app.New()` opens SQLite store, creates Hub, SSH Pool (backed by store as ServerProvider), and Monitor Manager (backed by pool as SSHExecutor).
+0. **Auth gate**: On first visit, frontend fetches `GET /api/auth/status`. If `needs_setup`, renders SetupPage → `POST /api/setup` (bcrypt hash → `config.json` + session cookie) → redirect to `/`. If not authenticated, renders LoginPage → `POST /api/login` (bcrypt verify + rate-limit check + session cookie) → redirect. All protected API routes and WebSocket upgrades pass through `auth.Middleware` which validates the session cookie before the handler runs. 401 responses from protected endpoints trigger client-side redirect to `/login`.
+1. **Config load**: `cmd/server/main.go` computes `baseDir` from `os.Executable()` (falling back to CWD for `go run` or errors), then reads `config.json` (or defaults) via `config.Load(path, baseDir)`. The resolved config file path is determined via `config.ConfigFilePath(path, baseDir)` and passed to `app.New()` for persistence. Log path and retention are derived from config fields and resolved against `baseDir` via `config.ResolvePath()`.
+2. **App init**: `app.New(cfg, configPath, baseDir)` resolves `DataDir` against `baseDir` via `config.ResolvePath()`, opens SQLite store (reads `BELOCHKA_ENCRYPTION_KEY` from env), creates Hub, SSH Pool (backed by store as ServerProvider), Monitor Manager (backed by pool as SSHExecutor), `config.Store` (holding `baseDir`; passed to router as `ConfigStore`, `LangStore`, and `auth.PasswordStore`), and `auth.SessionStore` (backed by `config.Store`). On first run, writes default config to `configPath` so a configuration file is available for editing.
 3. **Server sync**: On start and after any CRUD operation, `syncServers()` reconciles Pool and Manager with the current server list from the store.
-4. **SSH connections**: Pool maintains a persistent SSH connection per server with automatic reconnection (exponential backoff) and keepalive pings.
+4. **SSH connections**: Pool maintains a persistent SSH connection per server with automatic reconnection (exponential backoff, max 5 retries per cycle). On first failure, state → `reconnecting`. Non-retryable errors (auth, host key) stop immediately. Retryable errors stop after 5 attempts (≈31s), state → `failed`. **Collector failure triggers**: after 3 consecutive collection failures, `OnFailureThreshold` calls `pool.TriggerReconnect(serverID)` which only acts when state=Connected (closes client mid-keepalive, cancels keepalive context, triggers fresh reconnection). This catches dead connections ~6s vs keepalive's ~90s. After reconnection permanently fails (state=Failed), the collector continues running but logs at DEBUG level after failure 5 to avoid spam.
 5. **Metric collection**: Each server's Collector runs a 2s loop: executes a combined shell command over SSH → parses /proc output → computes CPU/network deltas from previous reading → stores latest Snapshot.
-6. **Broadcast loop**: Every 2s, `broadcastAll()` gathers all server states from Pool and latest Snapshots from Manager, assembles them into JSON via `broadcast.Assemble()`, and pushes to all WebSocket clients via Hub.
+6. **Broadcast loop**: Every 2s, `broadcastAll()` gathers all server states from Pool (via `ListWithoutPasswords` — skips AES-GCM decryption on the hot path) and latest Snapshots from Manager, assembles them into JSON via `broadcast.Assemble()`, and pushes to all WebSocket clients via Hub.
 7. **WebSocket delivery**: Hub fans out the `{"type":"snapshot","data":...}` envelope to all connected browser clients. New clients receive the cached snapshot immediately on connect.
-8. **Frontend rendering**: `WebSocketProvider` receives messages → `useMonitorState` hook updates React state → Dashboard/ServerDetail re-render with fresh metrics. All UI strings resolve through `react-i18next` `t()` calls against the active language's translation file.
+8. **Frontend rendering**: `WebSocketProvider` receives messages → `useMonitorState` hook updates React state → Dashboard/ServerDetail re-render with fresh metrics. All UI strings resolve through `react-i18next` `t()` calls against the active language's translation file. Language is bootstrapped from `<meta name="app-lang">` injected by the server (not from localStorage or browser navigator).
+8a. **Language detection**: On first visit (no language saved), `static.Handler` reads `Accept-Language`, picks the best supported language (en/zh/fr/ru), saves it via `config.Store.SetLanguage()`, and injects it into the meta tag. Subsequent visits inject the saved value directly.
+8b. **Settings**: `GET /api/config` returns all config fields, resolving empty `log_path` to `config.LogFilePath(baseDir)` and relative paths (including `data_dir`) to absolute paths via `config.ResolvePath(path, baseDir)` — using the binary directory held in `config.Store.BaseDir()`. `PATCH /api/config` accepts a partial body (only changed fields), writes atomically to `config.json`, and returns `restart_required: true` for changes that require a server restart (port, data_dir). Language changes are applied live via `i18n.changeLanguage()` without a restart.
 9. **Server CRUD**: REST API (`POST/GET/PUT/DELETE /api/servers`) persists to SQLite, then triggers `onServerChange` callback which re-syncs SSH pool and broadcasts updated state.
 10. **Terminal session**: Browser opens WebSocket to `/api/ws/terminal/{serverID}` → terminal Handler calls `SessionOpener.OpenSession()` to get an SSH session from Pool → requests PTY (xterm-256color) → starts shell → bridges stdin/stdout bidirectionally as binary WebSocket frames. Resize control messages (JSON text frames) trigger `WindowChange`. On SSH EOF or WebSocket close, session is cleaned up.
 11. **Connection test**: `POST /api/servers/test` accepts a full server config in the request body and runs `ssh.TestConnection` without persisting anything (no DB writes, no pool sync). When the password is omitted but an `id` is supplied, the stored secret is read (read-only) and reused. The Add/Edit dialogs test against in-memory form data and persist only on Save, so cancelling never leaves orphaned server records.
-12. **Cron management**: The cron handlers delegate to `cron.Service`, which performs the SSH read-modify-write. `GET /api/servers/{id}/crons` → `Service.List` (`crontab -l` → `ParseCrontab` → JSON). `POST` → `Service.Create` (append line, write back via `echo <base64> | base64 -d | crontab -`). `PUT /{index}` → `Service.Update` (`ReplaceCronEntry` in place); `DELETE /{index}` → `Service.Delete`; out-of-range index returns `ErrCronIndexOutOfRange` → HTTP 404. `POST /{index}/run` delegates to `Service.Run`, which resolves the entry by index (out-of-range → `ErrCronIndexOutOfRange` → HTTP 404) and executes the command via the injected `Runner` (`pool.RunCommand`), returning `{exitCode, output}`; non-zero exit codes are returned as data, not HTTP errors.
+12. **Manual reconnect**: When a server enters `failed` state, the frontend shows a reconnect button on ServerCard and ServerDetail. Clicking calls `POST /api/servers/{id}/reconnect` → handler validates server exists (404 if not) → calls `Pool.Reconnect(r.Context(), id)` which cancels the old connection context, creates a new `context.Background()`-derived context (so the goroutine outlives the HTTP handler), resets the Reconnector (attempts=0), starts a fresh `runConnection` goroutine, and returns the current connection status. The button shows a loading spinner while the request is in flight. Success/failure is reported via toast. If reconnection succeeds and the collector is still running, it naturally resumes successful collection (failures counter resets to 0).
+13. **Cron management**: The cron handlers delegate to `cron.Service`, which performs the SSH read-modify-write. `GET /api/servers/{id}/crons` → `Service.List` (`crontab -l` → `ParseCrontab` → JSON). `POST` → `Service.Create` (append line, write back via `echo <base64> | base64 -d | crontab -`). `PUT /{index}` → `Service.Update` (`ReplaceCronEntry` in place); `DELETE /{index}` → `Service.Delete`; out-of-range index returns `ErrCronIndexOutOfRange` → HTTP 404. `POST /{index}/run` delegates to `Service.Run`, which resolves the entry by index (out-of-range → `ErrCronIndexOutOfRange` → HTTP 404) and executes the command via the injected `Runner` (`pool.RunCommand`), returning `{exitCode, output}`; non-zero exit codes are returned as data, not HTTP errors.
+14. **Key file upload**: Browser selects a local SSH private key file → `ServerForm` checks `file.size <= 16KB`, then calls `uploadKeyFile(file)` → `POST /api/files/key` (multipart/form-data, `"keyfile"` field) → `HandleUploadKey` validates via `ssh.ParsePrivateKey()` (422 if invalid), writes to `dataDir/keys/<uuid>.key` (0600 perms), returns `{"path": "..."}`. Frontend stores `path` in `keyPath` field. On server save, `key_path` is persisted to DB. SSH connections use `os.ReadFile(key_path)` as before. Orphan key files are cleaned up asynchronously after every `syncServers` call via `store.CleanupOrphanKeys(dataDir)`, which scans `dataDir/keys/` and removes files not referenced by any server's `key_path`.
 
 ## External Dependencies
-- **i18next / react-i18next**: Frontend internationalization framework with React bindings; language auto-detected from browser, persisted in localStorage, switchable via UI
-- **i18next-browser-languagedetector**: Automatic language detection from localStorage and navigator
+- **i18next / react-i18next**: Frontend internationalization framework with React bindings; language bootstrapped from server-injected `<meta name="app-lang">`, switchable via SettingsDialog which PATCHes `/api/config`
 - **gorilla/websocket**: WebSocket server implementation for real-time metric streaming
 - **go-chi/chi**: HTTP router with path parameter support
 - **modernc.org/sqlite**: Pure-Go SQLite driver (no CGo required)
 - **golang.org/x/crypto/ssh**: SSH client connections, key parsing, keepalive
 - **google/uuid**: Server ID generation
-- **gopkg.in/yaml.v3**: Configuration file parsing
 - **@xterm/xterm + @xterm/addon-fit**: Terminal emulator for the web console page; fit addon auto-sizes to container
 - **Radix UI**: Accessible headless UI primitives (dialogs, buttons, etc.)
 - **react-router-dom**: Client-side routing for SPA

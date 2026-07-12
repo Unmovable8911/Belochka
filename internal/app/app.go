@@ -6,10 +6,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"belochka/internal/api"
+	"belochka/internal/auth"
 	"belochka/internal/broadcast"
+	"belochka/internal/clock"
 	"belochka/internal/config"
 	"belochka/internal/hub"
 	"belochka/internal/model"
@@ -22,6 +25,7 @@ import (
 )
 
 const shutdownTimeout = 10 * time.Second
+const broadcastInterval = 2 * time.Second
 
 type sshTester struct{}
 
@@ -34,6 +38,8 @@ func (sshTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
 // and HTTP server, providing Start/Shutdown lifecycle management.
 type Application struct {
 	cfg             config.Config
+	configStore     *config.Store
+	sessionStore    *auth.SessionStore
 	hub             *hub.Hub
 	store           *store.SQLiteStore
 	pool            *ssh.Pool
@@ -42,22 +48,28 @@ type Application struct {
 	httpServer      *http.Server
 	hubCancel       context.CancelFunc
 	addr            string
+	clock           clock.Clock
+	dataDir         string
 }
 
 // New creates a new Application from the given configuration.
+// configPath is the path to the config file used for PATCH /api/config persistence;
+// pass an empty string to disable file persistence (config remains in-memory only).
+// baseDir is the directory of the running binary, used to resolve relative paths.
 // It opens the database and initialises the hub, SSH pool, and
 // collector manager. Returns an error if the database cannot be opened.
-func New(cfg config.Config) (*Application, error) {
+func New(cfg config.Config, configPath string, baseDir string) (*Application, error) {
 	h := hub.New()
 
-	db, err := store.Open(cfg.DataDir, cfg.EncryptionKey)
+	dataDir := config.ResolvePath(cfg.DataDir, baseDir)
+	db, err := store.Open(dataDir, os.Getenv("BELOCHKA_ENCRYPTION_KEY"))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	pool := ssh.NewPool(db)
+	pool := ssh.NewPool(db, clock.Real{})
 
-	collectorMgr := monitor.NewManager(pool, monitor.CollectorOptions{})
+	collectorMgr := monitor.NewManager(pool, monitor.CollectorOptions{}, clock.Real{})
 	collectorMgr.SetOnFailureThreshold(func(serverID string, failures int) {
 		pool.TriggerReconnect(serverID)
 	})
@@ -66,13 +78,30 @@ func New(cfg config.Config) (*Application, error) {
 		OpenFn: pool.OpenSession,
 	})
 
+	configStore := config.NewStore(cfg, configPath, baseDir)
+	// Write default config to disk on first run when no config file exists
+	// and we have a path to write to.
+	if configPath != "" {
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			if err := configStore.Set(cfg); err != nil {
+				return nil, fmt.Errorf("write initial config: %w", err)
+			}
+		}
+	}
+
+	sessionStore := auth.NewSessionStore(configStore, clock.Real{})
+
 	return &Application{
 		cfg:             cfg,
+		configStore:     configStore,
+		sessionStore:    sessionStore,
 		hub:             h,
 		store:           db,
 		pool:            pool,
 		collectorMgr:    collectorMgr,
 		terminalHandler: termHandler,
+		clock:           clock.Real{},
+		dataDir:         dataDir,
 	}, nil
 }
 
@@ -84,9 +113,13 @@ func (a *Application) Start(ctx context.Context) error {
 	a.syncServers(ctx)
 	a.broadcastAll(ctx)
 
+	// Orphan cleanup runs async to avoid blocking startup.
+	go func() { _ = a.store.CleanupOrphanKeys(a.dataDir) }()
+
 	onServerChange := func() {
 		a.syncServers(ctx)
 		a.broadcastAll(ctx)
+		go func() { _ = a.store.CleanupOrphanKeys(a.dataDir) }()
 	}
 
 	var routerOpts []api.RouterOption
@@ -96,6 +129,11 @@ func (a *Application) Start(ctx context.Context) error {
 	routerOpts = append(routerOpts, api.WithTerminalHandler(a.terminalHandler))
 	routerOpts = append(routerOpts, api.WithCronExecutor(a.pool))
 	routerOpts = append(routerOpts, api.WithCronRunner(a.pool))
+	routerOpts = append(routerOpts, api.WithConfigStore(a.configStore))
+	routerOpts = append(routerOpts, api.WithLangStore(a.configStore))
+	routerOpts = append(routerOpts, api.WithKeyFileDir(a.dataDir))
+	routerOpts = append(routerOpts, api.WithReconnecter(a.pool))
+	routerOpts = append(routerOpts, api.WithAuth(auth.NewHandler(a.sessionStore), a.sessionStore))
 
 	distFS, err := web.DistFS()
 	if err != nil {
@@ -174,7 +212,7 @@ func (a *Application) Addr() string {
 // syncServers ensures the SSH pool and collector manager match the
 // current set of servers in the database.
 func (a *Application) syncServers(ctx context.Context) {
-	servers, err := a.store.List(ctx)
+	servers, err := a.store.ListWithoutPasswords(ctx)
 	if err != nil {
 		slog.Error("failed to list servers for sync", "error", err)
 		return
@@ -196,7 +234,11 @@ func (a *Application) syncServers(ctx context.Context) {
 }
 
 func (a *Application) broadcastAll(ctx context.Context) {
-	servers, err := a.store.List(ctx)
+	if a.hub.ClientCount() == 0 {
+		return
+	}
+
+	servers, err := a.store.ListWithoutPasswords(ctx)
 	if err != nil {
 		slog.Error("failed to list servers for broadcast", "error", err)
 		return
@@ -233,13 +275,13 @@ func (a *Application) broadcastAll(ctx context.Context) {
 // runBroadcastLoop periodically broadcasts metrics to all WebSocket
 // clients until ctx is cancelled.
 func (a *Application) runBroadcastLoop(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := a.clock.NewTicker(broadcastInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			a.broadcastAll(ctx)
 		}
 	}

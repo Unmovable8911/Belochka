@@ -14,6 +14,10 @@ const (
 	initialBackoff = 1 * time.Second
 	maxBackoff     = 30 * time.Second
 
+	// maxReconnectAttempts is the maximum number of reconnection attempts
+	// before the Reconnector gives up. 5 attempts ≈ 31s (1s→2s→4s→8s→16s).
+	maxReconnectAttempts = 5
+
 	// KeepaliveInterval is the interval between SSH keepalive pings.
 	KeepaliveInterval = 30 * time.Second
 
@@ -87,11 +91,11 @@ type Reconnector struct {
 }
 
 // NewReconnector creates a new Reconnector with the given connect function.
-func NewReconnector(connect ConnectFunc) *Reconnector {
+func NewReconnector(connect ConnectFunc, clk clock.Clock) *Reconnector {
 	return &Reconnector{
 		connect: connect,
 		state:   StateReconnecting,
-		clock:   clock.Real{},
+		clock:   clk,
 	}
 }
 
@@ -138,6 +142,17 @@ func (r *Reconnector) Run(ctx context.Context) {
 			slog.Warn("SSH reconnection stopped: non-retryable error",
 				"error", err,
 				"attempts", currentAttempt,
+			)
+			return
+		}
+
+		if currentAttempt >= maxReconnectAttempts {
+			r.mu.Lock()
+			r.state = StateFailed
+			r.mu.Unlock()
+			slog.Warn("SSH reconnection stopped: max attempts reached",
+				"attempts", currentAttempt,
+				"max_attempts", maxReconnectAttempts,
 			)
 			return
 		}
@@ -189,12 +204,12 @@ type Keepalive struct {
 }
 
 // NewKeepalive creates a new Keepalive monitor.
-func NewKeepalive(ping PingFunc, onReconnect func()) *Keepalive {
+func NewKeepalive(ping PingFunc, onReconnect func(), clk clock.Clock) *Keepalive {
 	return &Keepalive{
 		ping:        ping,
 		onReconnect: onReconnect,
 		interval:    KeepaliveInterval,
-		clock:       clock.Real{},
+		clock:       clk,
 	}
 }
 

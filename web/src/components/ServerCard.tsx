@@ -1,37 +1,22 @@
-import React from "react"
+import React, { useState } from "react"
 import { Link } from "react-router-dom"
 import { WifiOff, Loader2, ShieldAlert, KeyRound } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { UsageBar } from "@/components/UsageBar"
 import { formatPercent, formatNetworkSpeed } from "@/lib/format"
-import type { ServerInfo, ServerMetrics, NetworkInterface, DiskPartition } from "@/types/server"
+import * as api from "@/api/client"
+import { toast } from "sonner"
+import type { ServerInfo, ServerMetrics, DiskPartition } from "@/types/server"
 
 interface ServerCardProps {
   server: ServerInfo
   metrics?: ServerMetrics
 }
-
-const VIRTUAL_INTERFACE_PATTERNS = [
-  /^lo$/,
-  /^docker/,
-  /^veth/,
-  /^br-/,
-  /^virbr/,
-]
-
-function isPhysicalInterface(iface: NetworkInterface): boolean {
-  return !VIRTUAL_INTERFACE_PATTERNS.some((pattern) => pattern.test(iface.name))
-}
-
-function getHighestUsagePartition(partitions: DiskPartition[]): DiskPartition | null {
-  if (partitions.length === 0) return null
-  return partitions.reduce((highest, current) => {
-    const highestPct = highest.total > 0 ? (highest.used / highest.total) * 100 : 0
-    const currentPct = current.total > 0 ? (current.used / current.total) * 100 : 0
-    return currentPct > highestPct ? current : highest
-  })
+function getRootPartition(partitions: DiskPartition[]): DiskPartition | null {
+  return partitions.find((p) => p.mountPoint === "/") ?? null
 }
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -82,23 +67,35 @@ function getDisconnectedDisplay(server: ServerInfo, t: (key: string, opts?: Reco
 
 const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCardProps) {
   const { t } = useTranslation()
+  const [reconnecting, setReconnecting] = useState(false)
   const disconnected = getDisconnectedDisplay(server, t)
+
+  async function handleReconnect(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setReconnecting(true)
+    try {
+      await api.reconnectServer(server.id)
+    } catch {
+      toast.error(t("serverCard.reconnectFailed"))
+    } finally {
+      setReconnecting(false)
+    }
+  }
 
   const cpuPercent = metrics?.cpu.aggregate.usagePercent
   const memPercent = metrics?.memory
     ? (metrics.memory.used / metrics.memory.total) * 100
     : undefined
 
-  const highestDisk = metrics?.disk ? getHighestUsagePartition(metrics.disk.partitions) : null
-  const diskPercent = highestDisk && highestDisk.total > 0
-    ? (highestDisk.used / highestDisk.total) * 100
+  const rootDisk = metrics?.disk ? getRootPartition(metrics.disk.partitions) : null
+  const diskPercent = rootDisk && rootDisk.total > 0
+    ? (rootDisk.used / rootDisk.total) * 100
     : undefined
 
-  const physicalInterfaces = metrics?.network
-    ? metrics.network.interfaces.filter(isPhysicalInterface)
-    : []
-  const aggregatedRx = physicalInterfaces.reduce((sum, i) => sum + i.rxBytesPerSec, 0)
-  const aggregatedTx = physicalInterfaces.reduce((sum, i) => sum + i.txBytesPerSec, 0)
+  const interfaces = metrics?.network?.interfaces ?? []
+  const aggregatedRx = interfaces.reduce((sum, i) => sum + i.rxBytesPerSec, 0)
+  const aggregatedTx = interfaces.reduce((sum, i) => sum + i.txBytesPerSec, 0)
   const hasNetwork = metrics?.network !== undefined
 
   return (
@@ -120,6 +117,18 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
           <CardContent className="min-h-[140px] flex flex-col items-center justify-center text-center gap-2">
             {disconnected.icon}
             <p className="text-sm text-muted-foreground">{disconnected.message}</p>
+            {server.status === "failed" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={reconnecting}
+                onClick={handleReconnect}
+                className="mt-1"
+              >
+                {reconnecting && <Loader2 className="size-3 animate-spin" />}
+                {t("serverCard.reconnect")}
+              </Button>
+            )}
           </CardContent>
         ) : metrics ? (
           <CardContent className="space-y-3">
@@ -131,9 +140,9 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
               <UsageBar label={t("serverCard.memory")} value={memPercent} rightText={formatPercent(memPercent)} ariaLabel="Memory usage" />
             )}
 
-            {highestDisk && diskPercent !== undefined && (
+            {rootDisk && diskPercent !== undefined && (
               <UsageBar
-                label={<>{t("serverCard.disk")} <span className="text-muted-foreground">({highestDisk.mountPoint})</span></>}
+                label={t("serverCard.disk")}
                 value={diskPercent}
                 rightText={formatPercent(diskPercent)}
                 ariaLabel="Disk usage"

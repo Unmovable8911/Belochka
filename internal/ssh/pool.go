@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 
+	"belochka/internal/clock"
 	"belochka/internal/model"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -30,15 +31,17 @@ type managedConn struct {
 // It implements monitor.SSHExecutor.
 type Pool struct {
 	provider ServerProvider
+	clock    clock.Clock
 
 	mu    sync.RWMutex
 	conns map[string]*managedConn
 }
 
 // NewPool creates a new SSH connection pool.
-func NewPool(provider ServerProvider) *Pool {
+func NewPool(provider ServerProvider, clk clock.Clock) *Pool {
 	return &Pool{
 		provider: provider,
+		clock:    clk,
 		conns:    make(map[string]*managedConn),
 	}
 }
@@ -97,7 +100,7 @@ func (p *Pool) Add(ctx context.Context, serverID string) {
 		return nil
 	}
 
-	mc.recon = NewReconnector(connectFn)
+	mc.recon = NewReconnector(connectFn, p.clock)
 
 	go p.runConnection(connCtx, serverID, mc)
 }
@@ -142,6 +145,7 @@ func (p *Pool) runConnection(ctx context.Context, serverID string, mc *managedCo
 				mc.mu.Unlock()
 				kaCancel()
 			},
+			p.clock,
 		)
 
 		ka.Run(kaCtx)
@@ -291,6 +295,49 @@ func (p *Pool) TriggerReconnect(serverID string) {
 		mc.kaCancel()
 	}
 	mc.mu.Unlock()
+}
+
+// Reconnect forcefully restarts the connection for the given server.
+// It closes the old SSH client, cancels the old context and keepalive,
+// resets the Reconnector, and starts a new connection goroutine.
+// Works for any state (connected, reconnecting, failed) — idempotent.
+// No-op if the server is not in the pool. Returns the connection status
+// after initiating the reconnect.
+func (p *Pool) Reconnect(ctx context.Context, serverID string) ConnStatus {
+	p.mu.RLock()
+	mc, ok := p.conns[serverID]
+	p.mu.RUnlock()
+	if !ok {
+		return ConnStatus{State: StateReconnecting}
+	}
+
+	// Close existing client and keepalive.
+	mc.mu.Lock()
+	if mc.client != nil {
+		mc.client.Close()
+		mc.client = nil
+	}
+	if mc.kaCancel != nil {
+		mc.kaCancel()
+	}
+	mc.mu.Unlock()
+
+	// Cancel the old connection context (stops the old runConnection loop).
+	mc.cancel()
+
+	// Create a new context for the fresh connection loop.
+	// Use context.Background() rather than the incoming ctx (which may be
+	// an HTTP request context) so the connection goroutine outlives the
+	// HTTP handler that initiated the reconnect.
+	connCtx, connCancel := context.WithCancel(context.Background())
+	mc.mu.Lock()
+	mc.cancel = connCancel
+	mc.mu.Unlock()
+
+	mc.recon.Reset()
+	go p.runConnection(connCtx, serverID, mc)
+
+	return p.Status(serverID)
 }
 
 // CloseAll stops all connections and clears the pool.

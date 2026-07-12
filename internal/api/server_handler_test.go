@@ -528,6 +528,121 @@ func TestTestServer_ReusesStoredPasswordWhenOmitted(t *testing.T) {
 	}
 }
 
+// mockReconnecter implements api.Reconnecter for testing.
+type mockReconnecter struct {
+	calledWith []string
+	status     ssh.ConnStatus
+}
+
+func (m *mockReconnecter) Reconnect(_ context.Context, serverID string) ssh.ConnStatus {
+	m.calledWith = append(m.calledWith, serverID)
+	return m.status
+}
+
+func setupRouterWithReconnecter(store api.ServerStore, reconnecter api.Reconnecter) http.Handler {
+	h := hub.New()
+	return api.NewRouter(h, api.WithServerStore(store), api.WithReconnecter(reconnecter))
+}
+
+func TestReconnect_returnsStatus(t *testing.T) {
+	store := newMockStore()
+	// Pre-populate a server
+	store.servers["srv-1"] = model.Server{
+		ID: "srv-1", Name: "web-1", Host: "10.0.0.1", Port: 22,
+		Username: "deploy",
+	}
+
+	reconn := &mockReconnecter{
+		status: ssh.ConnStatus{State: ssh.StateReconnecting, Attempts: 0},
+	}
+	router := setupRouterWithReconnecter(store, reconn)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/srv-1/reconnect", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["state"] != "reconnecting" {
+		t.Fatalf("expected state reconnecting, got %v", resp["state"])
+	}
+	if len(reconn.calledWith) != 1 || reconn.calledWith[0] != "srv-1" {
+		t.Fatalf("expected Reconnect called with srv-1, got %v", reconn.calledWith)
+	}
+}
+
+func TestReconnect_serverNotFound_returns404(t *testing.T) {
+	store := newMockStore()
+	reconn := &mockReconnecter{
+		status: ssh.ConnStatus{State: ssh.StateReconnecting},
+	}
+	router := setupRouterWithReconnecter(store, reconn)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/nonexistent/reconnect", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	errObj, ok := resp["error"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected error object in response")
+	}
+	if errObj["code"] != "not_found" {
+		t.Fatalf("expected error code not_found, got %v", errObj["code"])
+	}
+
+	// Reconnect should NOT have been called for a non-existent server.
+	if len(reconn.calledWith) != 0 {
+		t.Fatalf("expected Reconnect not to be called, got %v", reconn.calledWith)
+	}
+}
+
+func TestReconnect_idempotentForNonFailedServer(t *testing.T) {
+	store := newMockStore()
+	store.servers["srv-1"] = model.Server{
+		ID: "srv-1", Name: "web-1", Host: "10.0.0.1", Port: 22,
+		Username: "deploy",
+	}
+
+	reconn := &mockReconnecter{
+		status: ssh.ConnStatus{State: ssh.StateReconnecting, Attempts: 0},
+	}
+	router := setupRouterWithReconnecter(store, reconn)
+
+	// First call
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/srv-1/reconnect", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first call: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Second call (idempotent)
+	req = httptest.NewRequest(http.MethodPost, "/api/servers/srv-1/reconnect", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second call: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Both calls should have triggered Reconnect.
+	if len(reconn.calledWith) != 2 {
+		t.Fatalf("expected 2 Reconnect calls, got %d", len(reconn.calledWith))
+	}
+}
+
 func TestTestServer_AuthFailure_Returns422(t *testing.T) {
 	tester := &mockSSHTester{
 		err: &ssh.ConnectionError{

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
 )
 
@@ -124,7 +125,7 @@ func TestCloseCheckpointsWAL(t *testing.T) {
 
 	// After checkpoint-and-close, the WAL file should be empty or absent.
 	walPath := dir + "/belochka.db-wal"
-	info, err := statFile(walPath)
+	info, err := os.Stat(walPath)
 	if err != nil {
 		// WAL file absent is fine — checkpoint succeeded.
 		return
@@ -145,7 +146,7 @@ func TestStoreOpenCreatesDataDirectory(t *testing.T) {
 	defer s.Close()
 
 	// Verify the data directory was created
-	info, err := statFile(dataDir)
+	info, err := os.Stat(dataDir)
 	if err != nil {
 		t.Fatalf("stat data dir: %v", err)
 	}

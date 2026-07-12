@@ -87,12 +87,12 @@ type wireSystem struct {
 
 func snapshotToWire(snap model.Snapshot) wireMetrics {
 	cpu := wireCPU{Cores: []wireCPUCore{}}
-	if len(snap.CPU) > 0 {
+	if snap.AggregateCPU != nil {
 		cpu.Aggregate = wireCPUCore{
-			Name:         snap.CPU[0].Name,
-			UsagePercent: snap.CPU[0].UsedPct,
+			Name:         snap.AggregateCPU.Name,
+			UsagePercent: snap.AggregateCPU.UsedPct,
 		}
-		for _, c := range snap.CPU[1:] {
+		for _, c := range snap.Cores {
 			cpu.Cores = append(cpu.Cores, wireCPUCore{
 				Name:         c.Name,
 				UsagePercent: c.UsedPct,

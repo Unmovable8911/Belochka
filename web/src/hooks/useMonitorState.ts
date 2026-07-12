@@ -25,24 +25,6 @@ export interface SnapshotAction {
   }
 }
 
-export interface MetricsAction {
-  type: "metrics"
-  data: {
-    serverId: string
-    metrics: ServerMetrics
-  }
-}
-
-export interface StatusAction {
-  type: "status"
-  data: {
-    serverId: string
-    status: string
-    attempts?: number
-    lastError?: string
-  }
-}
-
 export interface WsConnectedAction {
   type: "ws_connected"
   data: boolean
@@ -60,8 +42,6 @@ export interface UpdateServerAction {
 
 export type MonitorAction =
   | SnapshotAction
-  | MetricsAction
-  | StatusAction
   | WsConnectedAction
   | RemoveServerAction
   | UpdateServerAction
@@ -76,32 +56,6 @@ export function monitorReducer(state: MonitorState, action: MonitorAction): Moni
         servers: action.data.servers,
         metrics: action.data.metrics,
       }
-
-    case "metrics":
-      return {
-        ...state,
-        metrics: {
-          ...state.metrics,
-          [action.data.serverId]: action.data.metrics,
-        },
-      }
-
-    case "status": {
-      const updatedServers = state.servers.map((s) =>
-        s.id === action.data.serverId
-          ? {
-              ...s,
-              status: action.data.status,
-              attempts: action.data.attempts,
-              lastError: action.data.lastError,
-            }
-          : s
-      )
-      return {
-        ...state,
-        servers: updatedServers,
-      }
-    }
 
     case "ws_connected":
       return {

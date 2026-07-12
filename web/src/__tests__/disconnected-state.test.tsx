@@ -4,7 +4,6 @@ import { MemoryRouter } from "react-router-dom"
 import {
   MonitorContext,
   initialMonitorState,
-  monitorReducer,
   type MonitorState,
   type MonitorAction,
 } from "../hooks/useMonitorState"
@@ -78,32 +77,7 @@ describe("Dashboard Disconnected State Display", () => {
     cleanup()
   })
 
-  // --- Slice 1: Reducer stores attempts + lastError from status action ---
-
-  it("stores attempts and lastError from status action on ServerInfo", () => {
-    const stateWithServers: MonitorState = {
-      ...initialMonitorState,
-      servers: [
-        { id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" },
-      ],
-    }
-
-    const action: MonitorAction = {
-      type: "status",
-      data: {
-        serverId: "srv-1",
-        status: "reconnecting",
-        attempts: 3,
-        lastError: "connection refused",
-      },
-    }
-
-    const state = monitorReducer(stateWithServers, action)
-
-    expect(state.servers[0].status).toBe("reconnecting")
-    expect(state.servers[0].attempts).toBe(3)
-    expect(state.servers[0].lastError).toBe("connection refused")
-  })
+  // Status action removed — server state is updated via full "snapshot" messages only
 
   // --- Slice 2: Reconnecting card shows attempt count ---
 

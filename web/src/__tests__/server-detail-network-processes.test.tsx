@@ -84,7 +84,7 @@ describe("ServerDetail — Network section", () => {
     cleanup()
   })
 
-  it("shows all network interfaces with name, RX, and TX rates", () => {
+  it("renders network chart with interface selector and rate indicators", () => {
     const state: MonitorState = {
       ...initialMonitorState,
       servers: [makeServer({ id: "srv-1" })],
@@ -93,8 +93,7 @@ describe("ServerDetail — Network section", () => {
           network: {
             interfaces: [
               { name: "eth0", rxBytesPerSec: 1500000, txBytesPerSec: 500000 },
-              { name: "lo", rxBytesPerSec: 1000, txBytesPerSec: 1000 },
-              { name: "docker0", rxBytesPerSec: 0, txBytesPerSec: 0 },
+              { name: "eth1", rxBytesPerSec: 800000, txBytesPerSec: 200000 },
             ],
           },
         }),
@@ -104,13 +103,20 @@ describe("ServerDetail — Network section", () => {
 
     const networkSection = screen.getByTestId("network-section")
     expect(networkSection).toBeInTheDocument()
-    expect(screen.getByText("eth0")).toBeInTheDocument()
-    expect(screen.getByText("lo")).toBeInTheDocument()
-    expect(screen.getByText("docker0")).toBeInTheDocument()
 
-    // eth0: 1500000 B/s = 1.5 MB/s, 500000 = 500.0 KB/s
-    expect(screen.getByText(/1\.5 MB\/s/)).toBeInTheDocument()
-    expect(screen.getByText(/500\.0 KB\/s/)).toBeInTheDocument()
+    // The Select trigger (combobox) renders with the selected interface name.
+    const selector = screen.getByRole("combobox")
+    expect(selector).toBeInTheDocument()
+    expect(selector).toHaveTextContent("eth0")
+
+    // Rate indicators: 1500000 B/s = 1.5 MB/s, 500000 = 500.0 KB/s
+    // (text may also appear in Y-axis labels, so use getAllByText)
+    expect(screen.getAllByText(/1\.5 MB\/s/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/500\.0 KB\/s/).length).toBeGreaterThanOrEqual(1)
+
+    // RX and TX labels are present.
+    expect(screen.getByText(/RX/)).toBeInTheDocument()
+    expect(screen.getByText(/TX/)).toBeInTheDocument()
   })
 })
 

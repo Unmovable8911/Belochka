@@ -23,7 +23,9 @@
     "edit": "Изменить",
     "delete": "Удалить",
     "console": "Консоль",
-    "swap": "Подкачка"
+    "swap": "Подкачка",
+    "failedToLoad": "Не удалось загрузить сервер",
+    "coresCount": "{{count}} ядер"
   },
   "serverCard": {
     "cpu": "CPU",
@@ -33,7 +35,13 @@
     "connecting": "Подключение...",
     "reconnecting": "Переподключение ({{attempts}}/∞)",
     "authFailed": "Ошибка аутентификации — проверьте конфигурацию",
-    "hostKeyMismatch": "Несоответствие ключа хоста — проверьте конфигурацию"
+    "hostKeyMismatch": "Несоответствие ключа хоста — проверьте конфигурацию",
+    "reconnect": "Переподключить",
+    "reconnectFailed": "Не удалось переподключиться"
+  },
+  "serverForm": {
+    "authTypePassword": "Пароль",
+    "authTypeKey": "SSH-ключ"
   },
   "addServer": {
     "title": "Добавить сервер",
@@ -54,12 +62,18 @@
     "saving": "Сохранение...",
     "savedSuccess": "Сервер \"{{name}}\" добавлен успешно",
     "connectionTestFailed": "Ошибка проверки соединения",
-    "saveFailed": "Не удалось сохранить сервер"
+    "saveFailed": "Не удалось сохранить сервер",
+    "uploadKey": "Загрузить ключ",
+    "replaceKey": "Заменить",
+    "uploadingKey": "Загрузка...",
+    "uploadKeyFailed": "Не удалось загрузить файл ключа",
+    "keyFileTooLarge": "Файл ключа слишком большой (макс. 16 КБ)"
   },
   "editServer": {
     "title": "Редактировать сервер",
     "retestRequired": "Поля подключения изменены. Перед сохранением требуется повторная проверка.",
-    "savedSuccess": "Сервер \"{{name}}\" обновлён успешно"
+    "savedSuccess": "Сервер \"{{name}}\" обновлён успешно",
+    "passwordUnchanged": "без изменений"
   },
   "deleteServer": {
     "title": "Удалить сервер",
@@ -76,6 +90,10 @@
   },
   "connection": {
     "lost": "Соединение потеряно, переподключение..."
+  },
+  "networkChart": {
+    "noInterfaces": "Нет сетевых интерфейсов",
+    "waitingForData": "Ожидание данных..."
   },
   "processTable": {
     "pid": "PID",
@@ -95,6 +113,51 @@
   },
   "language": {
     "label": "Язык"
+  },
+  "auth": {
+    "setupTitle": "Установка пароля",
+    "setupHint": "Создайте пароль для защиты панели Belochka.",
+    "loginHint": "Введите пароль для продолжения.",
+    "password": "Пароль",
+    "confirmPassword": "Подтвердите пароль",
+    "oldPassword": "Текущий пароль",
+    "newPassword": "Новый пароль",
+    "confirmNewPassword": "Подтвердите новый пароль",
+    "setPassword": "Установить пароль",
+    "settingUp": "Настройка...",
+    "login": "Войти",
+    "loggingIn": "Вход...",
+    "logout": "Выйти",
+    "changePassword": "Сменить пароль",
+    "changingPassword": "Смена...",
+    "showPassword": "Показать пароль",
+    "fillAllFields": "Заполните все поля.",
+    "passwordsDontMatch": "Пароли не совпадают.",
+    "unknownError": "Произошла непредвиденная ошибка.",
+    "lockedOut": "Заблокировано ({{seconds}}с)",
+    "passwordChanged": "Пароль успешно изменён.",
+    "passwordChangeFailed": "Не удалось изменить пароль.",
+    "incorrectPassword": "Текущий пароль неверен.",
+    "passwordTooShort": "Пароль должен содержать не менее 6 символов.",
+    "loggedOut": "Выполнен выход из системы."
+  },
+  "settings": {
+    "title": "Настройки",
+    "language": "Язык",
+    "logPath": "Путь к журналу",
+    "logPathPlaceholder": "По умолчанию для платформы",
+    "logRetentionDays": "Хранение журнала (дней)",
+    "port": "Порт",
+    "dataDir": "Каталог данных",
+    "save": "Сохранить",
+    "saving": "Сохранение...",
+    "savedSuccess": "Настройки сохранены",
+    "saveFailed": "Не удалось сохранить настройки",
+    "theme": "Тема",
+    "themeLight": "Светлая",
+    "themeDark": "Тёмная",
+    "themeSystem": "Как в системе",
+    "restartRequired": "Для применения этих настроек требуется перезапуск:"
   },
   "cronJobs": {
     "tabOverview": "Обзор",

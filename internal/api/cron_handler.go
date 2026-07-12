@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,12 +12,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
-
-// CronRunner executes a cron command and returns combined stdout+stderr output
-// and the exit code. Unlike CronExecutor, a non-zero exit code is not an error.
-type CronRunner interface {
-	RunCommand(ctx context.Context, serverID, cmd string) (output string, exitCode int, err error)
-}
 
 // cronHandler handles cron endpoints.
 type cronHandler struct {
@@ -57,6 +50,11 @@ func (h *cronHandler) createCron(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.Command) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_input", "command is required")
+		return
+	}
+
+	if err := validateCronFields(req.Minute, req.Hour, req.DayOfMonth, req.Month, req.DayOfWeek); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
 
@@ -99,6 +97,11 @@ func (h *cronHandler) updateCron(w http.ResponseWriter, r *http.Request) {
 	var req updateCronRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+		return
+	}
+
+	if err := validateCronFields(req.Minute, req.Hour, req.DayOfMonth, req.Month, req.DayOfWeek); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
 
@@ -169,4 +172,24 @@ func (h *cronHandler) deleteCron(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateCronFields checks that all required cron schedule fields are non-empty.
+func validateCronFields(minute, hour, dayOfMonth, month, dayOfWeek string) error {
+	if minute == "" {
+		return fmt.Errorf("minute is required")
+	}
+	if hour == "" {
+		return fmt.Errorf("hour is required")
+	}
+	if dayOfMonth == "" {
+		return fmt.Errorf("dayOfMonth is required")
+	}
+	if month == "" {
+		return fmt.Errorf("month is required")
+	}
+	if dayOfWeek == "" {
+		return fmt.Errorf("dayOfWeek is required")
+	}
+	return nil
 }

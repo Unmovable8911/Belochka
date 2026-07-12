@@ -99,8 +99,7 @@ var t0 = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 // Sleep is non-blocking, so the reconnection loop runs at full speed.
 func newFastReconnector(connect ConnectFunc) (*Reconnector, *clock.Fake) {
 	clk := clock.NewFake(t0)
-	r := NewReconnector(connect)
-	r.clock = clk
+	r := NewReconnector(connect, clk)
 	return r, clk
 }
 
@@ -112,25 +111,28 @@ func TestReconnector_reconnectsOnRetryableError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go r.Run(ctx)
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
 
-	// Wait for at least 2 attempts
-	deadline := time.After(2 * time.Second)
-	for fc.getAttempts() < 2 {
-		select {
-		case <-deadline:
-			t.Fatalf("timed out; only %d attempts", fc.getAttempts())
-		default:
-			time.Sleep(5 * time.Millisecond)
-		}
+	// Should make at least 2 attempts before stopping (at the 5th).
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out; Reconnector should have stopped")
 	}
 
 	status := r.Status()
-	if status.State != StateReconnecting {
-		t.Errorf("state = %v, want %v", status.State, StateReconnecting)
+	if status.State != StateFailed {
+		t.Errorf("state = %v, want %v", status.State, StateFailed)
 	}
 	if status.Attempts < 2 {
 		t.Errorf("attempts = %d, want >= 2", status.Attempts)
+	}
+	if status.Attempts != 5 {
+		t.Errorf("attempts = %d, want 5", status.Attempts)
 	}
 }
 
@@ -169,44 +171,37 @@ func TestReconnector_stopsOnNonRetryableError(t *testing.T) {
 }
 
 func TestReconnector_resetsBackoffOnSuccess(t *testing.T) {
-	// Start with network error, then succeed
-	fc := &fakeConnector{err: &ConnectionError{Kind: ErrNetwork, Message: "refused"}}
+	callCount := 0
+	var mu sync.Mutex
 
-	r, _ := newFastReconnector(fc.connect)
+	// Fail 3 times, succeed on 4th
+	connect := func(ctx context.Context) error {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n >= 4 {
+			return nil
+		}
+		return &ConnectionError{Kind: ErrNetwork, Message: "refused"}
+	}
+
+	r, _ := newFastReconnector(connect)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go r.Run(ctx)
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
 
-	// Wait for a few attempts
-	deadline := time.After(2 * time.Second)
-	for fc.getAttempts() < 2 {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for attempts")
-		default:
-			time.Sleep(5 * time.Millisecond)
-		}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for connected state")
 	}
-
-	// Now make it succeed
-	fc.setError(nil)
-
-	// Wait for connected state
-	deadline = time.After(2 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for connected state")
-		default:
-			if r.Status().State == StateConnected {
-				goto done
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}
-done:
 
 	status := r.Status()
 	if status.State != StateConnected {
@@ -280,19 +275,21 @@ func TestReconnector_attemptCountTracked(t *testing.T) {
 
 func TestReconnector_backoffDelaysAreCorrect(t *testing.T) {
 	callCount := 0
-	fc := &fakeConnector{}
-	fc.err = &ConnectionError{Kind: ErrNetwork, Message: "refused"}
+	var mu sync.Mutex
 
-	r, clk := newFastReconnector(func(ctx context.Context) error {
-		e := fc.connect(ctx)
-		fc.mu.Lock()
-		callCount = fc.attempts
-		fc.mu.Unlock()
-		if callCount >= 7 {
+	// Fail 4 times, succeed on 5th (within maxReconnectAttempts limit).
+	connect := func(ctx context.Context) error {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n >= 5 {
 			return nil
 		}
-		return e
-	})
+		return &ConnectionError{Kind: ErrNetwork, Message: "refused"}
+	}
+
+	r, clk := newFastReconnector(connect)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -315,8 +312,6 @@ func TestReconnector_backoffDelaysAreCorrect(t *testing.T) {
 		2 * time.Second,
 		4 * time.Second,
 		8 * time.Second,
-		16 * time.Second,
-		30 * time.Second,
 	}
 	if len(sleeps) != len(expected) {
 		t.Fatalf("got %d sleeps, want %d: %v", len(sleeps), len(expected), sleeps)
@@ -325,6 +320,80 @@ func TestReconnector_backoffDelaysAreCorrect(t *testing.T) {
 		if sleeps[i] != want {
 			t.Errorf("sleep[%d] = %v, want %v", i, sleeps[i], want)
 		}
+	}
+}
+
+func TestReconnector_stopsAfterFiveRetries(t *testing.T) {
+	fc := &fakeConnector{err: &ConnectionError{Kind: ErrNetwork, Message: "refused"}}
+
+	r, _ := newFastReconnector(fc.connect)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
+
+	// Run should exit after 5 retries (FakeClock makes Sleep non-blocking).
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out; Reconnector should stop after 5 retries")
+	}
+
+	status := r.Status()
+	if status.State != StateFailed {
+		t.Errorf("state = %v, want %v", status.State, StateFailed)
+	}
+	if status.Attempts != 5 {
+		t.Errorf("attempts = %d, want 5", status.Attempts)
+	}
+	if status.LastError == "" {
+		t.Error("expected LastError to be set")
+	}
+}
+
+func TestReconnector_succeedsBeforeFiveRetries(t *testing.T) {
+	// Fail 3 times, succeed on 4th
+	callCount := 0
+	var mu sync.Mutex
+	connect := func(ctx context.Context) error {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n >= 4 {
+			return nil
+		}
+		return &ConnectionError{Kind: ErrNetwork, Message: "refused"}
+	}
+
+	r, _ := newFastReconnector(connect)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out; should succeed on 4th attempt")
+	}
+
+	status := r.Status()
+	if status.State != StateConnected {
+		t.Errorf("state = %v, want %v", status.State, StateConnected)
+	}
+	if status.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0 (reset on success)", status.Attempts)
 	}
 }
 
@@ -395,8 +464,7 @@ func TestKeepalive_detectsThreeConsecutiveFailures(t *testing.T) {
 		case triggered <- struct{}{}:
 		default:
 		}
-	})
-	ka.clock = clk
+	}, clk)
 	ka.interval = 10 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -441,8 +509,7 @@ func TestKeepalive_resetsCounterOnSuccess(t *testing.T) {
 	clk := clock.NewFake(t0)
 	ka := NewKeepalive(ping, func() {
 		triggered <- struct{}{}
-	})
-	ka.clock = clk
+	}, clk)
 	ka.interval = 10 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -468,8 +535,7 @@ func TestKeepalive_contextCancellationStops(t *testing.T) {
 	fp := &fakePinger{}
 
 	clk := clock.NewFake(t0)
-	ka := NewKeepalive(fp.ping, func() {})
-	ka.clock = clk
+	ka := NewKeepalive(fp.ping, func() {}, clk)
 	ka.interval = 10 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())

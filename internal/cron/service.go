@@ -43,7 +43,7 @@ func (s *Service) readCrontab(ctx context.Context, serverID string) (string, err
 // shell escaping issues with arbitrary content.
 func (s *Service) writeCrontab(ctx context.Context, serverID, content string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(content))
-	writeCmd := fmt.Sprintf("echo %s | base64 -d | crontab -", encoded)
+	writeCmd := fmt.Sprintf("printf '%%s' %s | base64 -d | crontab -", encoded)
 	_, err := s.executor.Execute(ctx, serverID, writeCmd)
 	return err
 }
@@ -80,7 +80,7 @@ func (s *Service) Create(ctx context.Context, serverID string, entry CronEntry) 
 	}
 
 	entry.Enabled = true
-	newLine := BuildCronLine(entry)
+	newLine := BuildLine(entry)
 	content := strings.TrimRight(existing, "\n")
 	if content != "" {
 		content += "\n"
