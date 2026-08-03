@@ -76,11 +76,11 @@ describe("ServerDetail — tabs", () => {
       ...baseState,
       metrics: {
         "srv-1": {
-          cpu: { aggregate: { usagePercent: 42 }, cores: [] },
-          memory: { total: 8e9, used: 4e9, available: 4e9, swapTotal: 0, swapUsed: 0 },
+          aggregate: { usagePercent: 42 },
+          cores: [],
+          memory: { total: 8e9, used: 4e9, swapTotal: 0, swapUsed: 0 },
           disk: { partitions: [] },
           network: { interfaces: [] },
-          process: { processes: [] },
           system: { hostname: "web-01", kernel: "5.15", uptimeSec: 3600, osName: "Ubuntu", coreCount: 2 },
         },
       },
@@ -197,11 +197,11 @@ describe("ServerDetail — tabs", () => {
       ...baseState,
       metrics: {
         "srv-1": {
-          cpu: { aggregate: { usagePercent: 42 }, cores: [] },
-          memory: { total: 8e9, used: 4e9, available: 4e9, swapTotal: 0, swapUsed: 0 },
+          aggregate: { usagePercent: 42 },
+          cores: [],
+          memory: { total: 8e9, used: 4e9, swapTotal: 0, swapUsed: 0 },
           disk: { partitions: [] },
           network: { interfaces: [] },
-          process: { processes: [] },
           system: { hostname: "web-01", kernel: "5.15", uptimeSec: 3600, osName: "Ubuntu", coreCount: 2 },
         },
       },
@@ -379,7 +379,7 @@ describe("ServerDetail — Edit cron", () => {
   it("each row has an edit button", async () => {
     const user = userEvent.setup()
     await openCronTabWithEntry(user)
-    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument()
+    expect(within(screen.getByTestId("cron-jobs-tab")).getByRole("button", { name: /edit/i })).toBeInTheDocument()
   })
 
   it("clicking edit opens dialog pre-populated with entry values", async () => {
@@ -387,7 +387,7 @@ describe("ServerDetail — Edit cron", () => {
     const entry = makeCronEntry({ minute: "30", hour: "2", command: "/usr/bin/weekly.sh" })
     await openCronTabWithEntry(user, entry)
 
-    await user.click(screen.getByRole("button", { name: /edit/i }))
+    await user.click(within(screen.getByTestId("cron-jobs-tab")).getByRole("button", { name: /edit/i }))
 
     // Dialog is open and fields are pre-populated
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
@@ -407,7 +407,7 @@ describe("ServerDetail — Edit cron", () => {
     await user.click(screen.getByRole("tab", { name: /cron jobs/i }))
     await waitFor(() => expect(screen.getByText("/usr/bin/hourly.sh")).toBeInTheDocument())
 
-    await user.click(screen.getByRole("button", { name: /edit/i }))
+    await user.click(within(screen.getByTestId("cron-jobs-tab")).getByRole("button", { name: /edit/i }))
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
 
     // Change command
@@ -429,7 +429,7 @@ describe("ServerDetail — Edit cron", () => {
     const user = userEvent.setup()
     await openCronTabWithEntry(user)
 
-    await user.click(screen.getByRole("button", { name: /edit/i }))
+    await user.click(within(screen.getByTestId("cron-jobs-tab")).getByRole("button", { name: /edit/i }))
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
 
     await user.click(screen.getByRole("button", { name: /save/i }))

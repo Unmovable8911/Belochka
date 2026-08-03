@@ -5,7 +5,7 @@ import type { CronEntry, CronResult, CronRunResult } from "@/types/server"
 
 // --- State ---
 
-interface CronState {
+export interface CronState {
   addCronOpen: boolean
   cronsLoading: boolean
   cronsError: string | null
@@ -19,7 +19,7 @@ interface CronState {
   runResult: { command: string; result: CronRunResult } | null
 }
 
-const initialCronState: CronState = {
+export const initialCronState: CronState = {
   addCronOpen: false,
   cronsLoading: false,
   cronsError: null,
@@ -35,7 +35,7 @@ const initialCronState: CronState = {
 
 // --- Actions ---
 
-type CronAction =
+export type CronAction =
   | { type: "SET_ADD_CRON_OPEN"; open: boolean }
   | { type: "SET_EDIT_ENTRY"; entry: CronEntry | undefined }
   | { type: "SET_EDIT_INDEX"; index: number | undefined }
@@ -56,7 +56,7 @@ type CronAction =
 
 // --- Reducer ---
 
-function cronReducer(state: CronState, action: CronAction): CronState {
+export function cronReducer(state: CronState, action: CronAction): CronState {
   switch (action.type) {
     case "SET_ADD_CRON_OPEN":
       return { ...state, addCronOpen: action.open }

@@ -153,8 +153,9 @@ export function ServerForm({
         </div>
       ) : (
         <div className="grid gap-2">
-          <Label>{t("addServer.keyFilePath")}</Label>
+          <Label htmlFor={`${idPrefix}key-file-path`}>{t("addServer.keyFilePath")}</Label>
           <input
+            id={`${idPrefix}key-file-path`}
             ref={fileInputRef}
             type="file"
             className="hidden"

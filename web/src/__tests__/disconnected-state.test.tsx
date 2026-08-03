@@ -26,11 +26,11 @@ function makeServer(overrides: Partial<ServerInfo> = {}): ServerInfo {
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
-    cpu: overrides.cpu ?? { aggregate: { usagePercent: 45.2 }, cores: [] },
+    aggregate: overrides.aggregate ?? { usagePercent: 45.2 },
+    cores: overrides.cores ?? [],
     memory: overrides.memory ?? {
       total: 8 * 1024 * 1024 * 1024,
       used: 4 * 1024 * 1024 * 1024,
-      available: 4 * 1024 * 1024 * 1024,
       swapTotal: 0,
       swapUsed: 0,
     },
@@ -41,7 +41,6 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
           mountPoint: "/",
           total: 100 * 1024 * 1024 * 1024,
           used: 60 * 1024 * 1024 * 1024,
-          available: 40 * 1024 * 1024 * 1024,
         },
       ],
     },
@@ -50,7 +49,6 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
         { name: "eth0", rxBytesPerSec: 1500000, txBytesPerSec: 500000 },
       ],
     },
-    process: overrides.process ?? { processes: [] },
     system: overrides.system ?? {
       hostname: "web-01",
       kernel: "5.15.0",
@@ -222,7 +220,8 @@ describe("Dashboard Disconnected State Display", () => {
       ],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 45.2 }, cores: [] },
+          aggregate: { usagePercent: 45.2 },
+          cores: [],
         }),
       },
     }

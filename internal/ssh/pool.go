@@ -14,6 +14,12 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+// Executor executes a shell command on a remote server via SSH and returns
+// its combined stdout+stderr. A non-zero exit code is returned as an error.
+type Executor interface {
+	Execute(ctx context.Context, serverID, cmd string) (string, error)
+}
+
 // ServerProvider fetches server configuration by ID.
 type ServerProvider interface {
 	GetByID(ctx context.Context, id string) (model.Server, error)
@@ -28,7 +34,6 @@ type managedConn struct {
 }
 
 // Pool manages persistent SSH connections to multiple servers.
-// It implements monitor.SSHExecutor.
 type Pool struct {
 	provider ServerProvider
 	clock    clock.Clock
@@ -201,7 +206,6 @@ func (p *Pool) clientFor(serverID string) (*gossh.Client, error) {
 }
 
 // Execute runs a command on the specified server's SSH connection.
-// It implements monitor.SSHExecutor.
 func (p *Pool) Execute(ctx context.Context, serverID, cmd string) (string, error) {
 	client, err := p.clientFor(serverID)
 	if err != nil {

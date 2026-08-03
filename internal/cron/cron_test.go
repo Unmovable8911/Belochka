@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"belochka/internal/ssh"
 )
 
 // stubExecutor returns a fixed crontab output for List.
@@ -12,6 +14,8 @@ type stubExecutor struct {
 	output string
 	err    error
 }
+
+var _ ssh.Executor = (*stubExecutor)(nil)
 
 func (s *stubExecutor) Execute(_ context.Context, _, _ string) (string, error) {
 	return s.output, s.err

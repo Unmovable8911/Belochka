@@ -57,7 +57,7 @@ func IsRetryable(err error) bool {
 	var connErr *ConnectionError
 	if errors.As(err, &connErr) {
 		switch connErr.Kind {
-		case ErrAuth, ErrHostKey:
+		case ErrAuth, ErrHostKey, ErrPassphrase:
 			return false
 		}
 	}

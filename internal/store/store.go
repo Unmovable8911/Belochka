@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"belochka/internal/model"
@@ -18,8 +19,8 @@ import (
 
 // SQLiteStore implements server persistence using SQLite.
 type SQLiteStore struct {
-	db  *sql.DB
-	key []byte
+	db     *sql.DB
+	cipher Cipher
 }
 
 const createServersTable = `
@@ -33,9 +34,22 @@ CREATE TABLE IF NOT EXISTS servers (
 	encrypted_password   TEXT NOT NULL DEFAULT '',
 	key_path             TEXT NOT NULL DEFAULT '',
 	host_key_fingerprint TEXT NOT NULL DEFAULT '',
+	group_id             TEXT,
 	created_at           DATETIME NOT NULL,
-	updated_at           DATETIME NOT NULL
+	updated_at           DATETIME NOT NULL,
+	FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
 );`
+
+const createGroupsTable = `
+CREATE TABLE IF NOT EXISTS groups (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL UNIQUE,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL
+);`
+
+// KeysSubDir is the subdirectory name for SSH key files.
+const KeysSubDir = "keys"
 
 // Open creates a new SQLiteStore. It ensures the data directory exists,
 // loads or generates an encryption key, opens the database with WAL mode,
@@ -68,12 +82,13 @@ func Open(dataDir string, encryptionKey string) (*SQLiteStore, error) {
 	}
 
 	dbPath := filepath.Join(dataDir, "belochka.db")
-	return newSQLiteStoreWithKey(dbPath, key)
+	return newSQLiteStoreWithKey(dbPath, NewAESCipher(key))
 }
 
-// newSQLiteStoreWithKey opens a SQLite database and initializes the schema.
-// Used by Open and by tests (with ":memory:").
-func newSQLiteStoreWithKey(dbPath string, key []byte) (*SQLiteStore, error) {
+// newSQLiteStoreWithKey opens a SQLite database, initializes the schema,
+// and returns a store that encrypts/decrypts with the given Cipher.
+// Used by Open (with AESCipher) and by tests (with AESCipher or a stub).
+func newSQLiteStoreWithKey(dbPath string, cipher Cipher) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -94,7 +109,22 @@ func newSQLiteStoreWithKey(dbPath string, key []byte) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
 
-	return &SQLiteStore{db: db, key: key}, nil
+	if _, err := db.Exec(createGroupsTable); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create groups table: %w", err)
+	}
+
+	if _, err := db.Exec(createBatchRunsTable); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create batch runs table: %w", err)
+	}
+
+	if _, err := db.Exec(createBatchRunResultsTable); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create batch run results table: %w", err)
+	}
+
+	return &SQLiteStore{db: db, cipher: cipher}, nil
 }
 
 // Close checkpoints the WAL and closes the underlying database connection.
@@ -119,10 +149,10 @@ func (s *SQLiteStore) Create(ctx context.Context, srv model.Server) (model.Serve
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO servers (id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO servers (id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, group_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		srv.ID, srv.Name, srv.Host, srv.Port, string(srv.AuthType),
-		srv.Username, encPassword, srv.KeyPath, srv.HostKeyFingerprint,
+		srv.Username, encPassword, srv.KeyPath, srv.HostKeyFingerprint, srv.GroupID,
 		srv.CreatedAt, srv.UpdatedAt,
 	)
 	if err != nil {
@@ -141,10 +171,10 @@ func (s *SQLiteStore) GetByID(ctx context.Context, id string) (model.Server, err
 	var authType string
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, created_at, updated_at
+		`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, group_id, created_at, updated_at
 		 FROM servers WHERE id = ?`, id,
 	).Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &authType,
-		&srv.Username, &encPassword, &srv.KeyPath, &srv.HostKeyFingerprint,
+		&srv.Username, &encPassword, &srv.KeyPath, &srv.HostKeyFingerprint, &srv.GroupID,
 		&srv.CreatedAt, &srv.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -157,7 +187,7 @@ func (s *SQLiteStore) GetByID(ctx context.Context, id string) (model.Server, err
 	srv.AuthType = model.AuthType(authType)
 
 	if encPassword != "" {
-		pwd, err := decrypt(s.key, encPassword)
+		pwd, err := s.cipher.Decrypt(encPassword)
 		if err != nil {
 			return model.Server{}, fmt.Errorf("decrypt password: %w", err)
 		}
@@ -181,7 +211,7 @@ func (s *SQLiteStore) ListWithoutPasswords(ctx context.Context) ([]model.Server,
 
 func (s *SQLiteStore) list(ctx context.Context, decryptPasswords bool) ([]model.Server, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, created_at, updated_at
+		`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, group_id, created_at, updated_at
 		 FROM servers ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("query servers: %w", err)
@@ -195,15 +225,15 @@ func (s *SQLiteStore) list(ctx context.Context, decryptPasswords bool) ([]model.
 		var authType string
 
 		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &authType,
-			&srv.Username, &encPassword, &srv.KeyPath, &srv.HostKeyFingerprint,
+			&srv.Username, &encPassword, &srv.KeyPath, &srv.HostKeyFingerprint, &srv.GroupID,
 			&srv.CreatedAt, &srv.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan server: %w", err)
 		}
 
 		srv.AuthType = model.AuthType(authType)
 
-	if decryptPasswords && encPassword != "" {
-			pwd, err := decrypt(s.key, encPassword)
+		if decryptPasswords && encPassword != "" {
+			pwd, err := s.cipher.Decrypt(encPassword)
 			if err != nil {
 				return nil, fmt.Errorf("decrypt password: %w", err)
 			}
@@ -240,10 +270,10 @@ func (s *SQLiteStore) Update(ctx context.Context, srv model.Server) (model.Serve
 	result, err := s.db.ExecContext(ctx,
 		`UPDATE servers SET name=?, host=?, port=?, auth_type=?, username=?,
 		 encrypted_password=COALESCE(NULLIF(?, ''), encrypted_password),
-		 key_path=?, host_key_fingerprint=?, updated_at=?
+		 key_path=?, host_key_fingerprint=?, group_id=?, updated_at=?
 		 WHERE id=?`,
 		srv.Name, srv.Host, srv.Port, string(srv.AuthType),
-		srv.Username, encPassword, srv.KeyPath, srv.HostKeyFingerprint,
+		srv.Username, encPassword, srv.KeyPath, srv.HostKeyFingerprint, srv.GroupID,
 		srv.UpdatedAt, srv.ID,
 	)
 
@@ -281,10 +311,240 @@ func (s *SQLiteStore) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListByGroup returns servers filtered by group ID, or all servers when
+// groupID is nil. Passwords are decrypted. When groupID is non-nil, servers
+// matching that group_id are returned (direct members only, not recursive).
+func (s *SQLiteStore) ListByGroup(ctx context.Context, groupID *string) ([]model.Server, error) {
+	return s.listByGroup(ctx, groupID, true)
+}
+
+// listWithoutPasswordsByGroup is like ListByGroup but without decrypting passwords.
+func (s *SQLiteStore) listWithoutPasswordsByGroup(ctx context.Context, groupID *string) ([]model.Server, error) {
+	return s.listByGroup(ctx, groupID, false)
+}
+
+func (s *SQLiteStore) listByGroup(ctx context.Context, groupID *string, decryptPasswords bool) ([]model.Server, error) {
+	var rows *sql.Rows
+	var err error
+
+	if groupID == nil {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, group_id, created_at, updated_at
+			 FROM servers ORDER BY created_at ASC`)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, name, host, port, auth_type, username, encrypted_password, key_path, host_key_fingerprint, group_id, created_at, updated_at
+			 FROM servers WHERE group_id = ? ORDER BY created_at ASC`, *groupID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query servers: %w", err)
+	}
+	defer rows.Close()
+
+	var servers []model.Server
+	for rows.Next() {
+		var srv model.Server
+		var encPassword string
+		var authType string
+
+		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &authType,
+			&srv.Username, &encPassword, &srv.KeyPath, &srv.HostKeyFingerprint, &srv.GroupID,
+			&srv.CreatedAt, &srv.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan server: %w", err)
+		}
+
+		srv.AuthType = model.AuthType(authType)
+
+		if decryptPasswords && encPassword != "" {
+			pwd, err := s.cipher.Decrypt(encPassword)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt password: %w", err)
+			}
+			srv.Password = pwd
+		}
+
+		servers = append(servers, srv)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate servers: %w", err)
+	}
+
+	return servers, nil
+}
+
+// --- Group CRUD ---
+
+// CreateGroup inserts a new group and returns it with generated ID and timestamps.
+func (s *SQLiteStore) CreateGroup(ctx context.Context, grp model.Group) (model.Group, error) {
+	grp.ID = uuid.New().String()
+	now := time.Now().UTC()
+	grp.CreatedAt = now
+	grp.UpdatedAt = now
+
+	// Validate name uniqueness across all groups
+	if err := s.checkGroupNameUnique(ctx, grp.Name, ""); err != nil {
+		return model.Group{}, err
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO groups (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		grp.ID, grp.Name, grp.CreatedAt, grp.UpdatedAt,
+	)
+	if err != nil {
+		return model.Group{}, fmt.Errorf("insert group: %w", err)
+	}
+
+	return grp, nil
+}
+
+// GetGroupByID retrieves a group by its UUID.
+func (s *SQLiteStore) GetGroupByID(ctx context.Context, id string) (model.Group, error) {
+	var grp model.Group
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, created_at, updated_at FROM groups WHERE id = ?`, id,
+	).Scan(&grp.ID, &grp.Name, &grp.CreatedAt, &grp.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return model.Group{}, fmt.Errorf("%w: %s", model.ErrGroupNotFound, id)
+	}
+	if err != nil {
+		return model.Group{}, fmt.Errorf("query group: %w", err)
+	}
+
+	return grp, nil
+}
+
+// ListGroups returns all groups ordered by creation time.
+func (s *SQLiteStore) ListGroups(ctx context.Context) ([]model.Group, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, created_at, updated_at FROM groups ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []model.Group
+	for rows.Next() {
+		var grp model.Group
+		if err := rows.Scan(&grp.ID, &grp.Name, &grp.CreatedAt, &grp.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan group: %w", err)
+		}
+		groups = append(groups, grp)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate groups: %w", err)
+	}
+
+	return groups, nil
+}
+
+// UpdateGroup modifies an existing group's name.
+func (s *SQLiteStore) UpdateGroup(ctx context.Context, grp model.Group) (model.Group, error) {
+	grp.UpdatedAt = time.Now().UTC()
+
+	// Verify the group exists (preserves created_at for the response).
+	existing, err := s.GetGroupByID(ctx, grp.ID)
+	if err != nil {
+		return model.Group{}, err
+	}
+
+	// Validate name uniqueness across all groups (excluding itself)
+	if err := s.checkGroupNameUnique(ctx, grp.Name, grp.ID); err != nil {
+		return model.Group{}, err
+	}
+
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE groups SET name=?, updated_at=? WHERE id=?`,
+		grp.Name, grp.UpdatedAt, grp.ID,
+	)
+	if err != nil {
+		return model.Group{}, fmt.Errorf("update group: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return model.Group{}, fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 0 {
+		return model.Group{}, fmt.Errorf("%w: %s", model.ErrGroupNotFound, grp.ID)
+	}
+
+	// Preserve created_at from existing record
+	grp.CreatedAt = existing.CreatedAt
+	return grp, nil
+}
+
+// DeleteGroup removes a group by ID. The group's member servers are ungrouped
+// (group_id set to NULL); there are no child groups to reassign.
+func (s *SQLiteStore) DeleteGroup(ctx context.Context, id string) error {
+	// Ungroup the group's member servers
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE servers SET group_id = NULL WHERE group_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("ungroup servers: %w", err)
+	}
+
+	// Delete the group
+	result, err := s.db.ExecContext(ctx, "DELETE FROM groups WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete group: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", model.ErrGroupNotFound, id)
+	}
+
+	return nil
+}
+
+// GroupMemberCount returns the number of servers assigned to a group.
+func (s *SQLiteStore) GroupMemberCount(ctx context.Context, groupID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM servers WHERE group_id = ?`, groupID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count group members: %w", err)
+	}
+	return count, nil
+}
+
+// checkGroupNameUnique checks that no other group has the given name.
+// If excludeID is non-empty, that group is excluded from the check (used
+// during rename).
+func (s *SQLiteStore) checkGroupNameUnique(ctx context.Context, name string, excludeID string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("group name must not be empty")
+	}
+
+	query := `SELECT COUNT(*) FROM groups WHERE name = ?`
+	args := []interface{}{name}
+
+	if excludeID != "" {
+		query += " AND id != ?"
+		args = append(args, excludeID)
+	}
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return fmt.Errorf("check name uniqueness: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: %s", model.ErrGroupDuplicateName, name)
+	}
+	return nil
+}
+
 // CleanupOrphanKeys removes key files in dataDir/keys that are no longer
 // referenced by any server's key_path.
 func (s *SQLiteStore) CleanupOrphanKeys(dataDir string) error {
-	keysDir := filepath.Join(dataDir, "keys")
+	keysDir := filepath.Join(dataDir, KeysSubDir)
 
 	entries, err := os.ReadDir(keysDir)
 	if err != nil {
@@ -344,7 +604,7 @@ func (s *SQLiteStore) encryptPassword(password string) (string, error) {
 	if password == "" {
 		return "", nil
 	}
-	return encrypt(s.key, password)
+	return s.cipher.Encrypt(password)
 }
 
 // deriveKey derives a 32-byte key from a passphrase using SHA-256.

@@ -10,6 +10,8 @@ import (
 	"testing/fstest"
 
 	"belochka/internal/static"
+
+	"belochka/internal/config"
 )
 
 const langPlaceholder = `<meta name="app-lang" content="">`
@@ -27,22 +29,29 @@ func testFS() fs.FS {
 	}
 }
 
-// mockLangStore is an in-memory LangStore for testing.
+// mockLangStore is an in-memory config.ConfigStore for testing.
 type mockLangStore struct {
 	mu   sync.Mutex
 	lang string
 }
 
+func (m *mockLangStore) Get() config.Config {
+	return config.Config{Language: m.lang}
+}
 func (m *mockLangStore) Language() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lang
 }
-
-func (m *mockLangStore) SetLanguage(lang string) error {
+func (m *mockLangStore) PasswordHash() string { return "" }
+func (m *mockLangStore) BaseDir() string      { return "" }
+func (m *mockLangStore) Update(fn func(*config.Config)) error {
+	var cfg config.Config
+	cfg.Language = m.lang
+	fn(&cfg)
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.lang = lang
+	m.lang = cfg.Language
+	m.mu.Unlock()
 	return nil
 }
 
@@ -173,6 +182,53 @@ func TestFirstVisitDetectsLanguageFromAcceptHeader(t *testing.T) {
 	want := `<meta name="app-lang" content="zh">`
 	if !strings.Contains(rec.Body.String(), want) {
 		t.Errorf("expected meta tag %q in response, got:\n%s", want, rec.Body.String())
+	}
+}
+
+// TestFirstVisitDetectsTraditionalChinese verifies that a zh-TW / zh-HK /
+// zh-Hant Accept-Language header resolves to the supported "zh-TW" code
+// rather than Simplified Chinese "zh".
+func TestFirstVisitDetectsTraditionalChinese(t *testing.T) {
+	for _, header := range []string{"zh-TW,zh;q=0.9,en;q=0.8", "zh-HK,zh;q=0.9", "zh-Hant,zh;q=0.9"} {
+		store := &mockLangStore{lang: ""}
+		h := static.NewHandler(testFS(), store)
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Language", header)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if store.lang != "zh-TW" {
+			t.Errorf("header %q: expected persisted language %q, got %q", header, "zh-TW", store.lang)
+		}
+		want := `<meta name="app-lang" content="zh-TW">`
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("header %q: expected meta tag %q in response, got:\n%s", header, want, rec.Body.String())
+		}
+	}
+}
+
+// TestFirstVisitDetectsNewLanguages verifies that the newly added languages
+// are detected from their base tags.
+func TestFirstVisitDetectsNewLanguages(t *testing.T) {
+	cases := map[string]string{
+		"de-DE,de;q=0.9": "de",
+		"es-ES,es;q=0.9": "es",
+		"pt-BR,pt;q=0.9": "pt",
+		"it-IT,it;q=0.9": "it",
+	}
+	for header, want := range cases {
+		store := &mockLangStore{lang: ""}
+		h := static.NewHandler(testFS(), store)
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Language", header)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if store.lang != want {
+			t.Errorf("header %q: expected persisted language %q, got %q", header, want, store.lang)
+		}
 	}
 }
 

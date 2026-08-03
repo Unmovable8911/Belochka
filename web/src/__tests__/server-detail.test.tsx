@@ -24,17 +24,14 @@ function makeServer(overrides: Partial<{ id: string; name: string; host: string;
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
-    cpu: overrides.cpu ?? {
-      aggregate: { usagePercent: 45.2 },
-      cores: [
+    aggregate: overrides.aggregate ?? { usagePercent: 45.2 },
+    cores: overrides.cores ?? [
         { name: "cpu0", usagePercent: 50.0 },
         { name: "cpu1", usagePercent: 40.0 },
       ],
-    },
     memory: overrides.memory ?? {
       total: 8 * 1024 * 1024 * 1024,
       used: 4 * 1024 * 1024 * 1024,
-      available: 4 * 1024 * 1024 * 1024,
       swapTotal: 0,
       swapUsed: 0,
     },
@@ -45,7 +42,6 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
           mountPoint: "/",
           total: 100 * 1024 * 1024 * 1024,
           used: 60 * 1024 * 1024 * 1024,
-          available: 40 * 1024 * 1024 * 1024,
         },
       ],
     },
@@ -54,7 +50,6 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
         { name: "eth0", rxBytesPerSec: 1500000, txBytesPerSec: 500000 },
       ],
     },
-    process: overrides.process ?? { processes: [] },
     system: overrides.system ?? {
       hostname: "web-01",
       kernel: "5.15.0-generic",
@@ -104,10 +99,8 @@ describe("ServerDetail", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: {
-            aggregate: { usagePercent: 72.5 },
-            cores: [],
-          },
+          aggregate: { usagePercent: 72.5 },
+          cores: [],
         }),
       },
     }
@@ -129,7 +122,8 @@ describe("ServerDetail", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 25.0 }, cores: [] },
+          aggregate: { usagePercent: 25.0 },
+          cores: [],
         }),
       },
     }
@@ -144,7 +138,8 @@ describe("ServerDetail", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 65.0 }, cores: [] },
+          aggregate: { usagePercent: 65.0 },
+          cores: [],
         }),
       },
     }
@@ -159,7 +154,8 @@ describe("ServerDetail", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 90.0 }, cores: [] },
+          aggregate: { usagePercent: 90.0 },
+          cores: [],
         }),
       },
     }
@@ -174,15 +170,13 @@ describe("ServerDetail", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: {
-            aggregate: { usagePercent: 45.0 },
-            cores: [
-              { name: "cpu0", usagePercent: 30.0 },
-              { name: "cpu1", usagePercent: 70.0 },
-              { name: "cpu2", usagePercent: 85.0 },
-              { name: "cpu3", usagePercent: 10.0 },
-            ],
-          },
+          aggregate: { usagePercent: 45.0 },
+          cores: [
+            { name: "cpu0", usagePercent: 30.0 },
+            { name: "cpu1", usagePercent: 70.0 },
+            { name: "cpu2", usagePercent: 85.0 },
+            { name: "cpu3", usagePercent: 10.0 },
+          ],
         }),
       },
     }
@@ -271,7 +265,6 @@ describe("ServerDetail", () => {
           memory: {
             total: 8 * 1024 * 1024 * 1024,
             used: 6 * 1024 * 1024 * 1024,
-            available: 2 * 1024 * 1024 * 1024,
             swapTotal: 2 * 1024 * 1024 * 1024,
             swapUsed: 512 * 1024 * 1024,
           },
@@ -298,7 +291,6 @@ describe("ServerDetail", () => {
           memory: {
             total: 16 * 1024 * 1024 * 1024, // 16 GiB
             used: 12 * 1024 * 1024 * 1024, // 12 GiB
-            available: 4 * 1024 * 1024 * 1024,
             swapTotal: 0,
             swapUsed: 0,
           },
@@ -319,7 +311,6 @@ describe("ServerDetail", () => {
           memory: {
             total: 8 * 1024 * 1024 * 1024,
             used: 4 * 1024 * 1024 * 1024,
-            available: 4 * 1024 * 1024 * 1024,
             swapTotal: 2 * 1024 * 1024 * 1024,
             swapUsed: 512 * 1024 * 1024,
           },
@@ -343,7 +334,6 @@ describe("ServerDetail", () => {
           memory: {
             total: 8 * 1024 * 1024 * 1024,
             used: 4 * 1024 * 1024 * 1024,
-            available: 4 * 1024 * 1024 * 1024,
             swapTotal: 0,
             swapUsed: 0,
           },
@@ -368,14 +358,12 @@ describe("ServerDetail", () => {
                 mountPoint: "/",
                 total: 100 * 1024 * 1024 * 1024,
                 used: 60 * 1024 * 1024 * 1024,
-                available: 40 * 1024 * 1024 * 1024,
               },
               {
                 filesystem: "/dev/sdb1",
                 mountPoint: "/data",
                 total: 500 * 1024 * 1024 * 1024,
                 used: 450 * 1024 * 1024 * 1024,
-                available: 50 * 1024 * 1024 * 1024,
               },
             ],
           },
@@ -384,13 +372,13 @@ describe("ServerDetail", () => {
     }
     renderDetail(state)
 
-    // Mount point labels
-    expect(screen.getByText("/")).toBeInTheDocument()
-    expect(screen.getByText("/data")).toBeInTheDocument()
+    // Mount point labels (include filesystem name in parentheses)
+    expect(screen.getByText(/^\/ \(/)).toBeInTheDocument()
+    expect(screen.getByText(/^\/data \(/)).toBeInTheDocument()
 
-    // Used/total values
-    expect(screen.getByText("60.0 GiB / 100.0 GiB")).toBeInTheDocument()
-    expect(screen.getByText("450.0 GiB / 500.0 GiB")).toBeInTheDocument()
+    // Used/total values (include percentage suffix)
+    expect(screen.getByText("60.0 GiB / 100.0 GiB (60.0%)")).toBeInTheDocument()
+    expect(screen.getByText("450.0 GiB / 500.0 GiB (90.0%)")).toBeInTheDocument()
 
     // Progress bars for disk partitions
     const rootBar = screen.getByRole("progressbar", { name: "/ usage" })
@@ -412,21 +400,18 @@ describe("ServerDetail", () => {
                 mountPoint: "/",
                 total: 100 * 1024 * 1024 * 1024,
                 used: 30 * 1024 * 1024 * 1024, // 30% -> green
-                available: 70 * 1024 * 1024 * 1024,
               },
               {
                 filesystem: "/dev/sdb1",
                 mountPoint: "/var",
                 total: 100 * 1024 * 1024 * 1024,
                 used: 70 * 1024 * 1024 * 1024, // 70% -> yellow
-                available: 30 * 1024 * 1024 * 1024,
               },
               {
                 filesystem: "/dev/sdc1",
                 mountPoint: "/data",
                 total: 100 * 1024 * 1024 * 1024,
                 used: 90 * 1024 * 1024 * 1024, // 90% -> red
-                available: 10 * 1024 * 1024 * 1024,
               },
             ],
           },

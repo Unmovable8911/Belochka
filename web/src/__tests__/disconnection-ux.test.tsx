@@ -47,11 +47,11 @@ function createMockWebSocketClass() {
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
-    cpu: { aggregate: { usagePercent: 0 }, cores: [] },
-    memory: { total: 0, used: 0, available: 0, swapTotal: 0, swapUsed: 0 },
+    aggregate: { usagePercent: 0 },
+    cores: [],
+    memory: { total: 0, used: 0, swapTotal: 0, swapUsed: 0 },
     disk: { partitions: [] },
     network: { interfaces: [] },
-    process: { processes: [] },
     system: { hostname: "", kernel: "", uptimeSec: 0, osName: "", coreCount: 0 },
     ...overrides,
   }
@@ -100,7 +100,7 @@ describe("Disconnection UX integration", () => {
         type: "snapshot",
         data: {
           servers: [{ id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" }],
-          metrics: { "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 42 }, cores: [] } }) },
+          metrics: { "srv-1": makeMetrics({ aggregate: { usagePercent: 42 }, cores: [] }) },
         },
       })
     })
@@ -143,7 +143,7 @@ describe("Disconnection UX integration", () => {
         <div>
           {Object.entries(state.metrics).map(([id, m]: [string, ServerMetrics]) => (
             <span key={id} data-testid={`cpu-${id}`}>
-              {m.cpu.aggregate.usagePercent}
+              {m.aggregate?.usagePercent}
             </span>
           ))}
         </div>
@@ -163,7 +163,7 @@ describe("Disconnection UX integration", () => {
         type: "snapshot",
         data: {
           servers: [{ id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" }],
-          metrics: { "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 55 }, cores: [] } }) },
+          metrics: { "srv-1": makeMetrics({ aggregate: { usagePercent: 55 }, cores: [] }) },
         },
       })
     })
@@ -206,7 +206,7 @@ describe("Disconnection UX integration", () => {
           <span data-testid="server-count">{state.servers.length}</span>
           {Object.entries(state.metrics).map(([id, m]: [string, ServerMetrics]) => (
             <span key={id} data-testid={`cpu-${id}`}>
-              {m.cpu.aggregate.usagePercent}
+              {m.aggregate?.usagePercent}
             </span>
           ))}
         </div>
@@ -226,7 +226,7 @@ describe("Disconnection UX integration", () => {
         type: "snapshot",
         data: {
           servers: [{ id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" }],
-          metrics: { "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 30 }, cores: [] } }) },
+          metrics: { "srv-1": makeMetrics({ aggregate: { usagePercent: 30 }, cores: [] }) },
         },
       })
     })
@@ -254,8 +254,8 @@ describe("Disconnection UX integration", () => {
             { id: "srv-2", name: "db-1", host: "10.0.0.2", status: "connected" },
           ],
           metrics: {
-            "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 65 }, cores: [] } }),
-            "srv-2": makeMetrics({ cpu: { aggregate: { usagePercent: 20 }, cores: [] } }),
+            "srv-1": makeMetrics({ aggregate: { usagePercent: 65 }, cores: [] }),
+            "srv-2": makeMetrics({ aggregate: { usagePercent: 20 }, cores: [] }),
           },
         },
       })

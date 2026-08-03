@@ -8,10 +8,19 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import { ServerForm } from "@/components/ServerForm"
 import { useServerForm } from "@/hooks/useServerForm"
+import { flattenGroupsForSelect } from "@/hooks/useGroups"
 import { toast } from "sonner"
-import type { Server, ServerFormData } from "@/types/server"
+import type { Group, Server, ServerFormData } from "@/types/server"
 import * as api from "@/api/client"
 
 export interface EditServerDialogProps {
@@ -19,6 +28,7 @@ export interface EditServerDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onServerUpdated?: (server: Server) => void
+  groups?: Group[]
 }
 
 /** Fields that require re-testing when changed */
@@ -40,6 +50,7 @@ function serverToForm(server: Server): ServerFormData {
     authType: server.auth_type,
     password: "",
     keyPath: server.key_path ?? "",
+    group_id: server.group_id,
   }
 }
 
@@ -49,7 +60,6 @@ function hasConnectionFieldChanged(
 ): boolean {
   for (const field of CONNECTION_FIELDS) {
     if (field === "password") {
-      // Password is never pre-filled; non-empty means the user typed a new one
       if (current[field] !== "") return true
     } else if (current[field] !== original[field]) {
       return true
@@ -63,6 +73,7 @@ export function EditServerDialog({
   open,
   onOpenChange,
   onServerUpdated,
+  groups = [],
 }: EditServerDialogProps) {
   const { t } = useTranslation()
   const [form, setForm] = useState<ServerFormData>(() => serverToForm(server))
@@ -80,6 +91,8 @@ export function EditServerDialog({
     runTest,
   } = useServerForm()
 
+  const groupOptions = flattenGroupsForSelect(groups)
+
   // Re-sync form when server prop changes
   useEffect(() => {
     setForm(serverToForm(server))
@@ -87,9 +100,9 @@ export function EditServerDialog({
 
   const connectionChanged = hasConnectionFieldChanged(form, originalForm)
 
-  // When only name changed (no connection fields), save is allowed directly
+  // When only name/group_id changed (no connection fields), save is allowed directly
   const nameOnlyChanged =
-    form.name !== originalForm.name && !connectionChanged
+    (form.name !== originalForm.name || form.group_id !== originalForm.group_id) && !connectionChanged
 
   function updateField<K extends keyof ServerFormData>(
     key: K,
@@ -97,7 +110,6 @@ export function EditServerDialog({
   ) {
     setForm((prev) => ({ ...prev, [key]: value }))
 
-    // Reset test state when connection fields change; otherwise just clear errors.
     if (CONNECTION_FIELDS.includes(key)) {
       resetTestState()
     } else {
@@ -113,7 +125,7 @@ export function EditServerDialog({
     )
   }
 
-  const hasAnyChange = connectionChanged || form.name !== originalForm.name
+  const hasAnyChange = connectionChanged || form.name !== originalForm.name || form.group_id !== originalForm.group_id
   const needsRetest = connectionChanged
   const testPassed = fingerprint !== null && fingerprintTrusted
   const canTest = isFormValid() && !testing && needsRetest
@@ -141,12 +153,15 @@ export function EditServerDialog({
       body.key_path = form.keyPath
     }
 
+    // Include group_id if it differs from original
+    if (form.group_id !== originalForm.group_id) {
+      body.group_id = form.group_id ?? null
+    }
+
     return body
   }
 
   function handleTestConnection() {
-    // Stateless test: pass the id so the backend can reuse the stored
-    // password when it was not re-entered. Nothing is persisted here.
     return runTest({ ...buildUpdateBody(), id: server.id })
   }
 
@@ -189,6 +204,29 @@ export function EditServerDialog({
           passwordPlaceholder={t("editServer.passwordUnchanged")}
           existingKeyPath={server.key_path}
         />
+
+        {/* Group selector */}
+        {groupOptions.length > 0 && (
+          <div className="grid gap-2">
+            <Label id="edit-group-select-label">{t("groups.noGroup")}</Label>
+            <Select
+              value={form.group_id ?? ""}
+              onValueChange={(value) => updateField("group_id", value || undefined)}
+            >
+              <SelectTrigger aria-labelledby="edit-group-select-label">
+                <SelectValue placeholder={t("groups.noGroup")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{t("groups.noGroup")}</SelectItem>
+                {groupOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {needsRetest && !testPassed && !testError && !testing && (
           <p className="text-sm text-yellow-600 dark:text-yellow-400">

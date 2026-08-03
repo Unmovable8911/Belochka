@@ -1,4 +1,5 @@
-import type { Server, TestResult, CronResult, CronEntry, CronRunResult, AppConfig, PatchConfigResponse, AuthStatus } from "@/types/server"
+import type { Server, TestResult, CronResult, CronEntry, CronRunResult, AppConfig, PatchConfigResponse, AuthStatus, Group, Process, KillResult } from "@/types/server"
+import type { BatchRunSnapshot } from "@/types/batch"
 
 export class ApiError extends Error {
   code: string
@@ -66,6 +67,44 @@ export async function reconnectServer(id: string): Promise<void> {
   return request<void>(`/api/servers/${id}/reconnect`, { method: "POST" })
 }
 
+// --- Groups ---
+
+export interface CreateGroupPayload {
+  name: string
+}
+
+export interface UpdateGroupPayload {
+  name?: string
+}
+
+export async function getGroups(): Promise<Group[]> {
+  return request<Group[]>("/api/groups")
+}
+
+export async function getGroup(id: string): Promise<Group> {
+  return request<Group>(`/api/groups/${id}`)
+}
+
+export async function createGroup(data: CreateGroupPayload): Promise<Group> {
+  return request<Group>("/api/groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateGroup(id: string, data: UpdateGroupPayload): Promise<Group> {
+  return request<Group>(`/api/groups/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteGroup(id: string): Promise<void> {
+  return request<void>(`/api/groups/${id}`, { method: "DELETE" })
+}
+
 export async function testConnection(data: Record<string, unknown>): Promise<TestResult> {
   return request<TestResult>("/api/servers/test", {
     method: "POST",
@@ -78,7 +117,7 @@ export async function getCrons(serverId: string): Promise<CronResult> {
   return request<CronResult>(`/api/servers/${serverId}/crons`)
 }
 
-export interface CreateCronPayload {
+interface CreateCronPayload {
   minute: string
   hour: string
   dayOfMonth: string
@@ -95,7 +134,7 @@ export async function createCron(serverId: string, payload: CreateCronPayload): 
   })
 }
 
-export interface UpdateCronPayload {
+interface UpdateCronPayload {
   minute: string
   hour: string
   dayOfMonth: string
@@ -178,11 +217,11 @@ export async function login(password: string): Promise<void> {
   })
 }
 
-export async function setup(password: string, confirmPassword: string): Promise<void> {
+export async function setup(language: string, password: string, confirmPassword: string): Promise<void> {
   await fetch("/api/setup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password, confirm_password: confirmPassword }),
+    body: JSON.stringify({ language, password, confirm_password: confirmPassword }),
   }).then(async (res) => {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
@@ -190,6 +229,10 @@ export async function setup(password: string, confirmPassword: string): Promise<
       throw new ApiError(body?.error?.code || "unknown", msg)
     }
   })
+}
+
+export async function restartServer(): Promise<void> {
+  await request<{ status: string }>("/api/restart", { method: "POST" })
 }
 
 export async function logout(): Promise<void> {
@@ -207,3 +250,45 @@ export async function changePassword(oldPassword: string, newPassword: string, c
     }),
   })
 }
+
+// --- Batch command ---
+
+export async function createBatchRun(script: string, serverIds: string[]): Promise<BatchRunSnapshot> {
+  return request<BatchRunSnapshot>("/api/batch-runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ script, server_ids: serverIds }),
+  })
+}
+
+// getCurrentBatchRun returns the most recent run, or null when no run has
+// ever been dispatched.
+export async function getCurrentBatchRun(): Promise<BatchRunSnapshot | null> {
+  try {
+    return await request<BatchRunSnapshot>("/api/batch-runs/current")
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "not_found") {
+      return null
+    }
+    throw err
+  }
+}
+
+export async function cancelBatchRun(): Promise<void> {
+  await request<void>("/api/batch-runs/current/cancel", { method: "POST" })
+}
+
+// --- Processes ---
+
+export async function getProcesses(serverId: string): Promise<Process[]> {
+  return request<Process[]>(`/api/servers/${serverId}/processes`)
+}
+
+export async function killProcess(serverId: string, pid: number, signal?: string): Promise<KillResult> {
+  return request<KillResult>(`/api/servers/${serverId}/processes/${pid}/kill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signal: signal || "SIGTERM" }),
+  })
+}
+

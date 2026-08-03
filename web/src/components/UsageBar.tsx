@@ -13,9 +13,9 @@ export function UsageBar({ label, value, rightText, ariaLabel }: UsageBarProps) 
   const colorHex = USAGE_COLOR_HEX[color]
   return (
     <div>
-      <div className="flex justify-between text-sm mb-1">
+      <div className="flex items-center justify-between gap-2 text-sm mb-1">
         <span>{label}</span>
-        <span>{rightText}</span>
+        <span className="whitespace-nowrap">{rightText}</span>
       </div>
       <div
         className="h-2 w-full rounded-full bg-muted overflow-hidden"
@@ -27,10 +27,10 @@ export function UsageBar({ label, value, rightText, ariaLabel }: UsageBarProps) 
         data-color={color}
       >
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-full transition-all duration-300"
           style={{
             width: `${value}%`,
-            backgroundColor: colorHex,
+            background: `linear-gradient(90deg, ${colorHex}cc, ${colorHex})`,
           }}
         />
       </div>

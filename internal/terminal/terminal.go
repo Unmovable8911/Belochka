@@ -3,49 +3,21 @@ package terminal
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"path"
 	"sync"
 
+	"belochka/internal/pty"
 	"belochka/internal/wsutil"
 	"github.com/gorilla/websocket"
 )
 
-const (
-	defaultTermRows = 24
-	defaultTermCols = 80
-	readBufferSize  = 4096
-)
+const readBufferSize = 4096
 
-// errOpenSession is a sentinel wrapped by prepareSession when OpenSession fails,
-// allowing ServeHTTP to map it back to HTTP 502 Bad Gateway.
-var errOpenSession = errors.New("open session")
-
-// Session abstracts an SSH session for testability.
-type Session interface {
-	RequestPTY(term string, rows, cols int) error
-	WindowChange(rows, cols int) error
-	StdinPipe() (io.WriteCloser, error)
-	StdoutPipe() (io.Reader, error)
-	Shell() error
-	Wait() error
-	Close() error
-}
-
-// SessionOpener creates an SSH session for a given server.
-type SessionOpener interface {
-	OpenSession(serverID string) (Session, error)
-}
-
-// ServerNotFoundError is returned when the server ID is not in the pool.
-type ServerNotFoundError struct {
-	ServerID string
-}
-
-func (e *ServerNotFoundError) Error() string {
-	return fmt.Sprintf("server not found: %s", e.ServerID)
+// PTYOpener opens interactive PTY sessions on remote Servers. Satisfied by
+// *pty.Opener.
+type PTYOpener interface {
+	OpenInteractive(serverID string, rows, cols int) (pty.Session, error)
 }
 
 type statusMessage struct {
@@ -60,16 +32,16 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles terminal WebSocket connections.
 type Handler struct {
-	opener   SessionOpener
+	opener   PTYOpener
 	mu       sync.Mutex
-	sessions map[Session]struct{}
+	sessions map[pty.Session]struct{}
 }
 
 // NewHandler creates a new terminal Handler.
-func NewHandler(opener SessionOpener) *Handler {
+func NewHandler(opener PTYOpener) *Handler {
 	return &Handler{
 		opener:   opener,
-		sessions: make(map[Session]struct{}),
+		sessions: make(map[pty.Session]struct{}),
 	}
 }
 
@@ -80,7 +52,7 @@ func (h *Handler) CloseAll() {
 	for s := range h.sessions {
 		s.Close()
 	}
-	h.sessions = make(map[Session]struct{})
+	h.sessions = make(map[pty.Session]struct{})
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -90,10 +62,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, stdin, stdout, err := h.prepareSession(serverID)
+	session, err := h.opener.OpenInteractive(serverID, pty.DefaultRows, pty.DefaultCols)
 	if err != nil {
 		code := http.StatusInternalServerError
-		if errors.Is(err, errOpenSession) {
+		if errors.Is(err, pty.ErrOpenSession) {
 			code = http.StatusBadGateway
 		}
 		http.Error(w, err.Error(), code)
@@ -112,41 +84,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	sendStatus(conn, "connected", "")
 
-	go h.bridgeSession(conn, session, stdin, stdout)
-}
-
-// prepareSession opens an SSH session, requests a PTY, and returns the session
-// along with its stdin/stdout pipes. The caller is responsible for closing the
-// session on error.
-func (h *Handler) prepareSession(serverID string) (Session, io.WriteCloser, io.Reader, error) {
-	session, err := h.opener.OpenSession(serverID)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: %w", errOpenSession, err)
-	}
-
-	if err := session.RequestPTY("xterm-256color", defaultTermRows, defaultTermCols); err != nil {
-		session.Close()
-		return nil, nil, nil, fmt.Errorf("request PTY: %w", err)
-	}
-
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		session.Close()
-		return nil, nil, nil, fmt.Errorf("stdin pipe: %w", err)
-	}
-
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		session.Close()
-		return nil, nil, nil, fmt.Errorf("stdout pipe: %w", err)
-	}
-
-	if err := session.Shell(); err != nil {
-		session.Close()
-		return nil, nil, nil, fmt.Errorf("start shell: %w", err)
-	}
-
-	return session, stdin, stdout, nil
+	go h.bridgeSession(conn, session)
 }
 
 func sendStatus(conn *websocket.Conn, status, message string) {
@@ -155,7 +93,7 @@ func sendStatus(conn *websocket.Conn, status, message string) {
 	conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (h *Handler) bridgeSession(conn *websocket.Conn, session Session, stdin io.WriteCloser, stdout io.Reader) {
+func (h *Handler) bridgeSession(conn *websocket.Conn, session pty.Session) {
 	defer func() {
 		session.Close()
 		h.mu.Lock()
@@ -171,7 +109,7 @@ func (h *Handler) bridgeSession(conn *websocket.Conn, session Session, stdin io.
 		defer close(done)
 		buf := make([]byte, readBufferSize)
 		for {
-			n, err := stdout.Read(buf)
+			n, err := session.Stdout().Read(buf)
 			if n > 0 {
 				if writeErr := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); writeErr != nil {
 					return
@@ -190,13 +128,13 @@ func (h *Handler) bridgeSession(conn *websocket.Conn, session Session, stdin io.
 		for {
 			msgType, data, err := conn.ReadMessage()
 			if err != nil {
-				stdin.Close()
+				session.Stdin().Close()
 				session.Close()
 				return
 			}
 			switch msgType {
 			case websocket.BinaryMessage:
-				stdin.Write(data)
+				session.Stdin().Write(data)
 			case websocket.TextMessage:
 				var ctrl struct {
 					Type string `json:"type"`
@@ -204,7 +142,7 @@ func (h *Handler) bridgeSession(conn *websocket.Conn, session Session, stdin io.
 					Rows int    `json:"rows"`
 				}
 				if json.Unmarshal(data, &ctrl) == nil && ctrl.Type == "resize" {
-					session.WindowChange(ctrl.Rows, ctrl.Cols)
+					session.SetSize(ctrl.Rows, ctrl.Cols)
 				}
 			}
 		}

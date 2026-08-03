@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom"
 import { ArrowLeft, Terminal, Trash2, Pencil, Loader2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useMonitorState } from "@/hooks/useMonitorState"
+import { useGroups } from "@/hooks/useGroups"
 import { formatBytes, formatUptime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { DeleteServerDialog } from "@/components/DeleteServerDialog"
@@ -11,19 +12,19 @@ import { toast } from "sonner"
 import type { Server } from "@/types/server"
 import * as api from "@/api/client"
 import { CronJobsTab } from "@/components/CronJobsTab"
-import { SettingsDialog } from "@/components/SettingsDialog"
+import { ProcessesTab } from "@/components/ProcessesTab"
 import { RingGauge } from "@/components/RingGauge"
 import { UsageBar } from "@/components/UsageBar"
 import { CoreBar } from "@/components/CoreBar"
-import { ProcessTable } from "@/components/ProcessTable"
 import { NetworkChart } from "@/components/NetworkChart"
 
-type Tab = "overview" | "crons"
+type Tab = "overview" | "crons" | "processes"
 
 export default function ServerDetail() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { state, dispatch } = useMonitorState()
+  const { groups } = useGroups(state.servers)
   const navigate = useNavigate()
 
   const [editOpen, setEditOpen] = useState(false)
@@ -121,7 +122,6 @@ export default function ServerDetail() {
             <Trash2 className="size-4 mr-1" />
             {t("serverDetail.delete")}
           </Button>
-          <SettingsDialog />
         </div>
       </div>
 
@@ -130,8 +130,9 @@ export default function ServerDetail() {
           server={fullServer}
           open={editOpen}
           onOpenChange={setEditOpen}
+          groups={groups}
           onServerUpdated={(updated) =>
-            dispatch({ type: "update_server", data: { serverId: updated.id, name: updated.name, host: updated.host } })
+            dispatch({ type: "update_server", data: { serverId: updated.id, name: updated.name, host: updated.host, group_id: updated.group_id } })
           }
         />
       )}
@@ -172,6 +173,18 @@ export default function ServerDetail() {
         >
           {t("cronJobs.tabCronJobs")}
         </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === "processes"}
+          onClick={() => setActiveTab("processes")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === "processes"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {t("serverDetail.tabProcesses")}
+        </button>
       </div>
 
       {/* Overview tab panel */}
@@ -203,15 +216,17 @@ export default function ServerDetail() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="metrics-grid">
-            {metrics?.cpu && (
+            {(metrics?.aggregate || (metrics?.cores && metrics.cores.length > 0)) && (
               <div className="rounded-lg border bg-card p-4 h-72 flex flex-col overflow-hidden">
                 <h2 className="text-lg font-semibold mb-4 shrink-0">{t("serverDetail.cpu")}</h2>
                 <div className="flex flex-col items-center gap-6 md:flex-row md:items-stretch flex-1 min-h-0">
-                  <div className="shrink-0 self-start">
-                    <RingGauge value={metrics.cpu.aggregate.usagePercent} testId="cpu-ring-gauge" />
-                  </div>
+                  {metrics.aggregate && (
+                    <div className="shrink-0 self-start">
+                      <RingGauge value={metrics.aggregate.usagePercent} testId="cpu-ring-gauge" />
+                    </div>
+                  )}
                   <div className="flex-1 w-full overflow-y-auto min-h-0 scrollbar-hidden flex flex-wrap gap-x-4 gap-y-2 content-start">
-                    {metrics.cpu.cores.map((core, index) => (
+                    {(metrics.cores ?? []).map((core, index) => (
                       <CoreBar
                         key={core.name ?? index}
                         label={`Core ${index}`}
@@ -272,17 +287,14 @@ export default function ServerDetail() {
             )}
           </div>
 
-          {metrics?.process && (
-            <div className="mt-6" data-testid="process-section">
-              <h2 className="text-lg font-semibold mb-4">{t("serverDetail.processes")}</h2>
-              <ProcessTable processes={metrics.process.processes} />
-            </div>
-          )}
         </>
       )}
 
       {/* Cron Jobs tab panel */}
       {activeTab === "crons" && id && <CronJobsTab serverId={id} />}
+
+      {/* Processes tab panel */}
+      {activeTab === "processes" && id && <ProcessesTab serverId={id} />}
     </div>
   )
 }

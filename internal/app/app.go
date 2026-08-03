@@ -7,16 +7,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"syscall"
 	"time"
 
 	"belochka/internal/api"
 	"belochka/internal/auth"
-	"belochka/internal/broadcast"
+	"belochka/internal/batchrun"
 	"belochka/internal/clock"
 	"belochka/internal/config"
 	"belochka/internal/hub"
-	"belochka/internal/model"
 	"belochka/internal/monitor"
+	"belochka/internal/process"
+	"belochka/internal/pty"
 	"belochka/internal/shutdown"
 	"belochka/internal/ssh"
 	"belochka/internal/store"
@@ -27,29 +29,30 @@ import (
 const shutdownTimeout = 10 * time.Second
 const broadcastInterval = 2 * time.Second
 
-type sshTester struct{}
-
-func (sshTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
-	return ssh.TestConnection(srv)
-}
-
 // Application is the top-level container for all server components.
 // It wires together the hub, store, SSH pool, collector manager,
 // and HTTP server, providing Start/Shutdown lifecycle management.
+// Business logic (server sync, broadcast assembly) is delegated to
+// focused components behind narrow interfaces so they can be tested
+// independently of the full DI graph.
 type Application struct {
-	cfg             config.Config
-	configStore     *config.Store
-	sessionStore    *auth.SessionStore
-	hub             *hub.Hub
-	store           *store.SQLiteStore
-	pool            *ssh.Pool
-	collectorMgr    *monitor.Manager
-	terminalHandler *terminal.Handler
-	httpServer      *http.Server
-	hubCancel       context.CancelFunc
-	addr            string
-	clock           clock.Clock
-	dataDir         string
+	cfg              config.Config
+	configStore      *config.Store
+	sessionStore     *auth.SessionStore
+	hub              *hub.Hub        // lifecycle: Run, ServeWS
+	store            *store.SQLiteStore
+	pool             *ssh.Pool
+	collectorMgr     *monitor.Manager
+	synchronizer     *ServerSynchronizer
+	broadcastSvc     *BroadcastService
+	terminalHandler  *terminal.Handler
+	batchRunSvc      *batchrun.Service
+	httpServer       *http.Server
+	hubCancel        context.CancelFunc
+	addr             string
+	clock            clock.Clock
+	dataDir          string
+	OnLanguageChange func(string)
 }
 
 // New creates a new Application from the given configuration.
@@ -74,22 +77,26 @@ func New(cfg config.Config, configPath string, baseDir string) (*Application, er
 		pool.TriggerReconnect(serverID)
 	})
 
-	termHandler := terminal.NewHandler(&terminal.SSHSessionOpener{
-		OpenFn: pool.OpenSession,
-	})
+	ptyOpener := pty.NewOpener(pool.OpenSession)
+
+	termHandler := terminal.NewHandler(ptyOpener)
 
 	configStore := config.NewStore(cfg, configPath, baseDir)
 	// Write default config to disk on first run when no config file exists
 	// and we have a path to write to.
 	if configPath != "" {
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			if err := configStore.Set(cfg); err != nil {
+			if err := configStore.Update(func(c *config.Config) { *c = cfg }); err != nil {
 				return nil, fmt.Errorf("write initial config: %w", err)
 			}
 		}
 	}
 
 	sessionStore := auth.NewSessionStore(configStore, clock.Real{})
+
+	synchronizer := NewServerSynchronizer(db, pool, collectorMgr)
+	broadcastSvc := NewBroadcastService(db, pool, collectorMgr, h)
+	batchRunSvc := batchrun.New(db, pool, ptyOpener)
 
 	return &Application{
 		cfg:             cfg,
@@ -99,7 +106,10 @@ func New(cfg config.Config, configPath string, baseDir string) (*Application, er
 		store:           db,
 		pool:            pool,
 		collectorMgr:    collectorMgr,
+		synchronizer:    synchronizer,
+		broadcastSvc:    broadcastSvc,
 		terminalHandler: termHandler,
+		batchRunSvc:     batchRunSvc,
 		clock:           clock.Real{},
 		dataDir:         dataDir,
 	}, nil
@@ -110,27 +120,32 @@ func New(cfg config.Config, configPath string, baseDir string) (*Application, er
 // is bound (no time.Sleep needed in tests). Returns an error if
 // the listener cannot be created.
 func (a *Application) Start(ctx context.Context) error {
-	a.syncServers(ctx)
-	a.broadcastAll(ctx)
+	a.synchronizer.SyncAndLog(ctx)
+	a.broadcastSvc.Broadcast(ctx)
 
 	// Orphan cleanup runs async to avoid blocking startup.
 	go func() { _ = a.store.CleanupOrphanKeys(a.dataDir) }()
 
 	onServerChange := func() {
-		a.syncServers(ctx)
-		a.broadcastAll(ctx)
+		a.synchronizer.SyncAndLog(ctx)
+		a.broadcastSvc.Broadcast(ctx)
 		go func() { _ = a.store.CleanupOrphanKeys(a.dataDir) }()
 	}
 
 	var routerOpts []api.RouterOption
 	routerOpts = append(routerOpts, api.WithServerStore(a.store))
-	routerOpts = append(routerOpts, api.WithSSHTester(sshTester{}))
+	routerOpts = append(routerOpts, api.WithGroupStore(a.store))
+	routerOpts = append(routerOpts, api.WithSSHTester(ssh.TestConnection))
 	routerOpts = append(routerOpts, api.WithOnServerChange(onServerChange))
 	routerOpts = append(routerOpts, api.WithTerminalHandler(a.terminalHandler))
 	routerOpts = append(routerOpts, api.WithCronExecutor(a.pool))
 	routerOpts = append(routerOpts, api.WithCronRunner(a.pool))
+	routerOpts = append(routerOpts, api.WithProcessService(process.NewService(a.pool)))
+	routerOpts = append(routerOpts, api.WithBatchRunService(a.batchRunSvc))
 	routerOpts = append(routerOpts, api.WithConfigStore(a.configStore))
+	routerOpts = append(routerOpts, api.WithRestartFn(a.Restart))
 	routerOpts = append(routerOpts, api.WithLangStore(a.configStore))
+	routerOpts = append(routerOpts, api.WithOnLanguageChange(a.OnLanguageChange))
 	routerOpts = append(routerOpts, api.WithKeyFileDir(a.dataDir))
 	routerOpts = append(routerOpts, api.WithReconnecter(a.pool))
 	routerOpts = append(routerOpts, api.WithAuth(auth.NewHandler(a.sessionStore), a.sessionStore))
@@ -156,6 +171,20 @@ func (a *Application) Start(ctx context.Context) error {
 	go a.hub.Run(hubCtx)
 
 	go a.runBroadcastLoop(ctx)
+
+	// Periodically purge expired sessions and rate-limit state.
+	go func() {
+		ticker := a.clock.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C():
+				a.sessionStore.CleanupExpired()
+			}
+		}
+	}()
 
 	go func() {
 		slog.Info("starting server", "addr", a.addr, "data_dir", a.cfg.DataDir)
@@ -186,6 +215,13 @@ func (a *Application) Shutdown() error {
 		return nil
 	})
 
+	seq.Add("batch", func(ctx context.Context) error {
+		// Terminate any in-flight Batch Run; its results are persisted as
+		// cancelled by the background executions.
+		a.batchRunSvc.Cancel()
+		return nil
+	})
+
 	seq.Add("collectors", func(ctx context.Context) error {
 		a.collectorMgr.StopAll()
 		return nil
@@ -209,67 +245,24 @@ func (a *Application) Addr() string {
 	return a.addr
 }
 
-// syncServers ensures the SSH pool and collector manager match the
-// current set of servers in the database.
-func (a *Application) syncServers(ctx context.Context) {
-	servers, err := a.store.ListWithoutPasswords(ctx)
+// Restart gracefully shuts down the application and replaces the current
+// process with a new instance of the same binary. It never returns on success.
+func (a *Application) Restart() {
+	if err := a.Shutdown(); err != nil {
+		slog.Error("shutdown before restart had errors", "error", err)
+	}
+
+	exe, err := os.Executable()
 	if err != nil {
-		slog.Error("failed to list servers for sync", "error", err)
-		return
+		slog.Error("cannot find executable for restart", "error", err)
+		os.Exit(1)
 	}
 
-	currentIDs := make(map[string]bool, len(servers))
-	for _, s := range servers {
-		currentIDs[s.ID] = true
-		a.pool.Add(ctx, s.ID)
-		a.collectorMgr.Add(ctx, s.ID)
+	// syscall.Exec replaces the current process image, preserving the PID.
+	if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
+		slog.Error("restart failed", "error", err)
+		os.Exit(1)
 	}
-
-	for _, id := range a.collectorMgr.ServerIDs() {
-		if !currentIDs[id] {
-			a.collectorMgr.Remove(id)
-			a.pool.Remove(id)
-		}
-	}
-}
-
-func (a *Application) broadcastAll(ctx context.Context) {
-	if a.hub.ClientCount() == 0 {
-		return
-	}
-
-	servers, err := a.store.ListWithoutPasswords(ctx)
-	if err != nil {
-		slog.Error("failed to list servers for broadcast", "error", err)
-		return
-	}
-
-	infos := make([]broadcast.ServerInfo, len(servers))
-	snapshots := make(map[string]*model.Snapshot)
-
-	for i, s := range servers {
-		status := a.pool.Status(s.ID)
-		infos[i] = broadcast.ServerInfo{
-			ID:        s.ID,
-			Name:      s.Name,
-			Host:      s.Host,
-			State:     string(status.State),
-			Attempts:  status.Attempts,
-			LastError: status.LastError,
-		}
-
-		if snap := a.collectorMgr.Latest(s.ID); snap != nil {
-			snapshots[s.ID] = snap
-		}
-	}
-
-	data, err := broadcast.Assemble(infos, snapshots)
-	if err != nil {
-		slog.Error("failed to assemble broadcast", "error", err)
-		return
-	}
-	a.hub.SetSnapshot(data)
-	a.hub.BroadcastMsg("snapshot", data)
 }
 
 // runBroadcastLoop periodically broadcasts metrics to all WebSocket
@@ -282,7 +275,7 @@ func (a *Application) runBroadcastLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C():
-			a.broadcastAll(ctx)
+			a.broadcastSvc.Broadcast(ctx)
 		}
 	}
 }

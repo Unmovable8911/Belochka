@@ -10,6 +10,7 @@ import (
 
 	"belochka/internal/clock"
 	"belochka/internal/model"
+	"belochka/internal/ssh"
 )
 
 func TestCollectCommand(t *testing.T) {
@@ -25,7 +26,6 @@ func TestCollectCommand(t *testing.T) {
 		"cat /proc/meminfo",
 		"df -B1",
 		"cat /proc/net/dev",
-		"top -bn1",
 		"hostname",
 		"uname -r",
 		"cat /proc/uptime",
@@ -64,15 +64,6 @@ SwapFree:         800000 kB
     lo:  1000   100    0    0    0     0          0         0    1000   100    0    0    0     0       0          0
   eth0: 50000  5000    0    0    0     0          0         0   30000  3000    0    0    0     0       0          0
 `
-	fakeTop = `top - 14:32:01 up 1 day,  0:00,  1 users,  load average: 0.10, 0.05, 0.01
-Tasks:  50 total,   1 running,  49 sleeping,   0 stopped,   0 zombie
-%Cpu(s):  2.0 us,  1.0 sy,  0.0 ni, 97.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
-MiB Mem :   7812.5 total,   1953.1 free,   3906.2 used,   1953.1 buff/cache
-MiB Swap:    976.6 total,    781.2 free,    195.3 used.   3515.6 avail Mem
-
-    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-    100 root      20   0  100000  50000  25000 S   5.0   0.6   0:10.00 myapp
-`
 	fakeHostname  = `testserver`
 	fakeUname     = `5.15.0-generic`
 	fakeUptime    = `86400.00 172800.00`
@@ -88,7 +79,6 @@ func validCombinedOutput() string {
 		fakeProcMeminfo,
 		fakeDf,
 		fakeProcNetDev,
-		fakeTop,
 		fakeHostname,
 		fakeUname,
 		fakeUptime,
@@ -127,11 +117,6 @@ func TestParseCombinedOutput(t *testing.T) {
 		t.Errorf("network interfaces = %d, want 1", len(metrics.Network.Interfaces))
 	}
 
-	// Process: check process parsed
-	if len(metrics.Process.Processes) != 1 {
-		t.Errorf("processes = %d, want 1", len(metrics.Process.Processes))
-	}
-
 	// System: check hostname parsed
 	if metrics.System.Hostname != "testserver" {
 		t.Errorf("hostname = %q, want %q", metrics.System.Hostname, "testserver")
@@ -167,10 +152,6 @@ func TestComputeCPUUsage(t *testing.T) {
 		t.Errorf("name = %q, want %q", usage.Name, "cpu")
 	}
 	assertFloat(t, "UsedPct", usage.UsedPct, 26.09, 0.1)
-	assertFloat(t, "UserPct", usage.UserPct, 15.94, 0.1)
-	assertFloat(t, "SystemPct", usage.SystemPct, 7.25, 0.1)
-	assertFloat(t, "IOWaitPct", usage.IOWaitPct, 1.45, 0.1)
-	assertFloat(t, "StealPct", usage.StealPct, 1.45, 0.1)
 }
 
 func TestComputeCPUUsage_zeroDelta(t *testing.T) {
@@ -240,13 +221,15 @@ func TestComputeNetworkRates_newInterface(t *testing.T) {
 
 // --- Collector integration tests ---
 
-// fakeExecutor is a test double for SSHExecutor.
+// fakeExecutor is a test double for ssh.Executor.
 type fakeExecutor struct {
 	mu        sync.Mutex
 	output    string
 	err       error
 	callCount int
 }
+
+var _ ssh.Executor = (*fakeExecutor)(nil)
 
 func (f *fakeExecutor) Execute(ctx context.Context, serverID, cmd string) (string, error) {
 	f.mu.Lock()
@@ -327,7 +310,7 @@ done:
 		t.Error("expected CPU usage entries after second cycle")
 	}
 	// Network rates should have entries
-	if len(snap.Network) == 0 {
+	if len(snap.Network.Interfaces) == 0 {
 		t.Error("expected network rate entries after second cycle")
 	}
 }
@@ -464,6 +447,8 @@ type blockingExecutor struct {
 	output        string
 }
 
+var _ ssh.Executor = (*blockingExecutor)(nil)
+
 func (b *blockingExecutor) Execute(ctx context.Context, serverID, cmd string) (string, error) {
 	select {
 	case <-time.After(b.blockDuration):
@@ -598,7 +583,7 @@ func assertFloat(t *testing.T, name string, got, want, tolerance float64) {
 }
 
 func TestParseCombinedOutput_wrongSectionCount(t *testing.T) {
-	// Only 5 sections instead of 10
+	// Only 5 sections instead of 9
 	output := buildCombinedOutput("a", "b", "c", "d", "e")
 	_, err := ParseCombinedOutput(output)
 	if err == nil {
@@ -650,7 +635,7 @@ func TestCollector_fakeClock_deterministicDelta(t *testing.T) {
 		t.Errorf("CPU used = %.2f, want 0 (identical readings)", snap.AggregateCPU.UsedPct)
 	}
 	// Network rates should be zero with identical readings and 2s interval
-	for _, r := range snap.Network {
+	for _, r := range snap.Network.Interfaces {
 		if r.RxBytesPS != 0 || r.TxBytesPS != 0 {
 			t.Errorf("network %s rate should be 0 with identical readings, got rx=%.0f tx=%.0f",
 				r.Name, r.RxBytesPS, r.TxBytesPS)
@@ -776,6 +761,8 @@ func TestCollector_onFailureThresholdNotCalledBelowThreshold(t *testing.T) {
 type switchableExecutor struct {
 	fn func(ctx context.Context, serverID, cmd string) (string, error)
 }
+
+var _ ssh.Executor = (*switchableExecutor)(nil)
 
 func (s *switchableExecutor) Execute(ctx context.Context, serverID, cmd string) (string, error) {
 	return s.fn(ctx, serverID, cmd)

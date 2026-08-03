@@ -6,6 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="app-lang" content="">
     <title>Belochka</title>
+    <!-- Prevent theme flash: apply dark class before first paint so next-themes
+         picks up from the correct starting state. Mirrors next-themes'
+         defaultTheme="system" logic: localStorage > system preference > light. -->
+    <script>
+      (function(){var t=localStorage.getItem("theme")||"system";if(t==="system"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}if(t==="dark"){document.documentElement.classList.add("dark")}})()
+    </script>
   </head>
   <body>
     <div id="root"></div>

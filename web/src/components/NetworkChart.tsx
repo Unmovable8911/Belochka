@@ -147,11 +147,11 @@ export function NetworkChart({ interfaces }: { interfaces: NetworkInterface[] })
           {current && (
             <>
               <span className="inline-flex items-center gap-1">
-                <span className="inline-block size-2 rounded-full bg-[#3b82f6]" />
+                <span className="inline-block size-2 rounded-full bg-[var(--chart-rx)]" />
                 RX {formatNetworkSpeed(current.rxBytesPerSec)}
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className="inline-block size-2 rounded-full bg-[#f97316]" />
+                <span className="inline-block size-2 rounded-full bg-[var(--chart-tx)]" />
                 TX {formatNetworkSpeed(current.txBytesPerSec)}
               </span>
             </>
@@ -237,7 +237,7 @@ export function NetworkChart({ interfaces }: { interfaces: NetworkInterface[] })
             <polyline
               points={rxPoints}
               fill="none"
-              stroke="#3b82f6"
+              stroke="var(--chart-rx)"
               strokeWidth="1.5"
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -249,7 +249,7 @@ export function NetworkChart({ interfaces }: { interfaces: NetworkInterface[] })
             <polyline
               points={txPoints}
               fill="none"
-              stroke="#f97316"
+              stroke="var(--chart-tx)"
               strokeWidth="1.5"
               strokeLinejoin="round"
               strokeLinecap="round"

@@ -4,6 +4,8 @@ import { WebSocketProvider } from "./components/WebSocketProvider"
 import { ConnectionBanner } from "./components/ConnectionBanner"
 import { StaleDataOverlay } from "./components/StaleDataOverlay"
 import { Layout } from "./components/Layout"
+import { ErrorBoundary } from "./components/ErrorBoundary"
+import { Toaster } from "./components/ui/sonner"
 import Dashboard from "./pages/Dashboard"
 import ServerDetail from "./pages/ServerDetail"
 import Console from "./pages/Console"
@@ -27,34 +29,37 @@ function App() {
   if (state === "loading") return null
 
   return (
-    <BrowserRouter>
-      {state === "setup" ? (
-        <Routes>
-          <Route path="*" element={<SetupPage />} />
-        </Routes>
-      ) : state === "login" ? (
-        <Routes>
-          <Route path="*" element={<LoginPage />} />
-        </Routes>
-      ) : (
-        <Routes>
-          <Route path="/server/:id/console" element={<Console />} />
-          <Route path="*" element={
-            <WebSocketProvider>
-              <Layout>
-                <ConnectionBanner />
-                <StaleDataOverlay>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/server/:id" element={<ServerDetail />} />
-                  </Routes>
-                </StaleDataOverlay>
-              </Layout>
-            </WebSocketProvider>
-          } />
-        </Routes>
-      )}
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        {state === "setup" ? (
+          <Routes>
+            <Route path="*" element={<SetupPage />} />
+          </Routes>
+        ) : state === "login" ? (
+          <Routes>
+            <Route path="*" element={<LoginPage />} />
+          </Routes>
+        ) : (
+          <Routes>
+            <Route path="/server/:id/console" element={<Console />} />
+            <Route path="*" element={
+              <WebSocketProvider>
+                <Layout>
+                  <ConnectionBanner />
+                  <StaleDataOverlay>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/server/:id" element={<ServerDetail />} />
+                    </Routes>
+                  </StaleDataOverlay>
+                </Layout>
+              </WebSocketProvider>
+            } />
+          </Routes>
+        )}
+      </BrowserRouter>
+      <Toaster />
+    </ErrorBoundary>
   )
 }
 

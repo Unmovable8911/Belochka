@@ -7,6 +7,17 @@ import (
 	"sync"
 )
 
+// ConfigStore is the canonical read/write interface for application configuration.
+// The concrete [Store] type satisfies it; consumers should depend on this
+// interface rather than defining their own subsets.
+type ConfigStore interface {
+	Get() Config
+	Update(func(*Config)) error
+	Language() string
+	PasswordHash() string
+	BaseDir() string
+}
+
 // Store holds shared mutable config state, safe for concurrent use.
 type Store struct {
 	mu      sync.RWMutex
@@ -35,17 +46,19 @@ func (s *Store) Get() Config {
 	return s.cfg
 }
 
-// Set updates the in-memory config and, when a path is configured,
-// atomically writes it to disk before updating the in-memory value.
-func (s *Store) Set(cfg Config) error {
+// Update calls fn with a pointer to the in-memory config while holding
+// the write lock. When fn returns, the updated config is atomically
+// persisted to disk (if a path is configured). Persist errors are
+// returned; the in-memory value is updated regardless.
+func (s *Store) Update(fn func(*Config)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	fn(&s.cfg)
 	if s.path != "" {
-		if err := atomicWriteConfig(s.path, cfg); err != nil {
+		if err := atomicWriteConfig(s.path, s.cfg); err != nil {
 			return err
 		}
 	}
-	s.cfg = cfg
 	return nil
 }
 
@@ -56,34 +69,11 @@ func (s *Store) Language() string {
 	return s.cfg.Language
 }
 
-// PasswordHash returns the current password hash. Satisfies auth.PasswordStore.
+// PasswordHash returns the current password hash.
 func (s *Store) PasswordHash() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg.PasswordHash
-}
-
-// SetPasswordHash updates the password hash and persists to disk. Satisfies auth.PasswordStore.
-func (s *Store) SetPasswordHash(hash string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cfg.PasswordHash = hash
-	if s.path != "" {
-		return atomicWriteConfig(s.path, s.cfg)
-	}
-	return nil
-}
-
-// SetLanguage updates the language field in the config, persisting to disk
-// when a path is configured.
-func (s *Store) SetLanguage(lang string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cfg.Language = lang
-	if s.path != "" {
-		return atomicWriteConfig(s.path, s.cfg)
-	}
-	return nil
 }
 
 // atomicWriteConfig marshals cfg to JSON and writes it to path via a

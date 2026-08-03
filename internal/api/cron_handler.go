@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	"belochka/internal/cron"
+	"belochka/internal/httpx"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -23,11 +23,11 @@ func (h *cronHandler) listCrons(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.List(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
+		httpx.WriteError(w, http.StatusBadGateway, "ssh_error", "Failed to read crontab: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	httpx.WriteJSON(w, http.StatusOK, result)
 }
 
 type createCronRequest struct {
@@ -43,18 +43,18 @@ func (h *cronHandler) createCron(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var req createCronRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
 		return
 	}
 
 	if strings.TrimSpace(req.Command) == "" {
-		writeError(w, http.StatusBadRequest, "invalid_input", "command is required")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_input", "command is required")
 		return
 	}
 
 	if err := validateCronFields(req.Minute, req.Hour, req.DayOfMonth, req.Month, req.DayOfWeek); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
 
@@ -69,11 +69,11 @@ func (h *cronHandler) createCron(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.service.Create(r.Context(), id, entry)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
+		httpx.WriteError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, created)
+	httpx.WriteJSON(w, http.StatusCreated, created)
 }
 
 type updateCronRequest struct {
@@ -90,18 +90,18 @@ func (h *cronHandler) updateCron(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	idx, err := strconv.Atoi(chi.URLParam(r, "index"))
 	if err != nil || idx < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
 		return
 	}
 
 	var req updateCronRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
 		return
 	}
 
 	if err := validateCronFields(req.Minute, req.Hour, req.DayOfMonth, req.Month, req.DayOfWeek); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
 
@@ -118,14 +118,14 @@ func (h *cronHandler) updateCron(w http.ResponseWriter, r *http.Request) {
 	updated, err := h.service.Update(r.Context(), id, idx, entry)
 	if err != nil {
 		if errors.Is(err, cron.ErrCronIndexOutOfRange) {
-			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+			httpx.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
 			return
 		}
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
+		httpx.WriteError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, updated)
+	httpx.WriteJSON(w, http.StatusOK, updated)
 }
 
 type runCronResponse struct {
@@ -137,37 +137,37 @@ func (h *cronHandler) runCron(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	idx, err := strconv.Atoi(chi.URLParam(r, "index"))
 	if err != nil || idx < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
 		return
 	}
 
 	output, exitCode, err := h.service.Run(r.Context(), id, idx)
 	if err != nil {
 		if errors.Is(err, cron.ErrCronIndexOutOfRange) {
-			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+			httpx.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
 			return
 		}
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to execute command: "+err.Error())
+		httpx.WriteError(w, http.StatusBadGateway, "ssh_error", "Failed to execute command: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, runCronResponse{ExitCode: exitCode, Output: output})
+	httpx.WriteJSON(w, http.StatusOK, runCronResponse{ExitCode: exitCode, Output: output})
 }
 
 func (h *cronHandler) deleteCron(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	idx, err := strconv.Atoi(chi.URLParam(r, "index"))
 	if err != nil || idx < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_index", "index must be a non-negative integer")
 		return
 	}
 
 	if err := h.service.Delete(r.Context(), id, idx); err != nil {
 		if errors.Is(err, cron.ErrCronIndexOutOfRange) {
-			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
+			httpx.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("cron entry %d does not exist", idx))
 			return
 		}
-		writeError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
+		httpx.WriteError(w, http.StatusBadGateway, "ssh_error", "Failed to write crontab: "+err.Error())
 		return
 	}
 

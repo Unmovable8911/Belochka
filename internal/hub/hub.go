@@ -17,6 +17,14 @@ type Envelope struct {
 	Data json.RawMessage `json:"data"`
 }
 
+// Broadcaster is the subset of Hub methods used for broadcasting
+// snapshots and status messages to connected WebSocket clients.
+type Broadcaster interface {
+	SetSnapshot(data json.RawMessage)
+	BroadcastMsg(msgType string, data json.RawMessage)
+	ClientCount() int
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: wsutil.CheckOrigin,
 }

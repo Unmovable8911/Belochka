@@ -192,7 +192,7 @@ describe("SettingsDialog", () => {
     })
   })
 
-  it("shows restart_required notice when port or data_dir is changed", async () => {
+  it("shows restart dialog when port or data_dir is changed", async () => {
     const user = userEvent.setup()
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
@@ -214,8 +214,13 @@ describe("SettingsDialog", () => {
 
     await user.click(within(dialog).getByRole("button", { name: /^save$/i }))
 
+    // The restart dialog should appear as a second dialog.
     await waitFor(() => {
-      expect(within(dialog).getByTestId("restart-notice")).toBeInTheDocument()
+      const dialogs = screen.getAllByRole("dialog")
+      const restartDialog = dialogs.find((d) =>
+        within(d).queryByText(/restart now/i) || within(d).queryByText(/立即重启/i)
+      )
+      expect(restartDialog).toBeInTheDocument()
     })
   })
 

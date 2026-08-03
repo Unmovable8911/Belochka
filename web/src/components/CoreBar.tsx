@@ -13,7 +13,7 @@ export function CoreBar({ label, value, ariaLabel }: CoreBarProps) {
 
   return (
     <div
-      className="flex items-start gap-1.5"
+      className="flex items-start gap-1.5 w-20"
       role="progressbar"
       aria-label={ariaLabel}
       aria-valuenow={Math.round(value)}
@@ -23,16 +23,16 @@ export function CoreBar({ label, value, ariaLabel }: CoreBarProps) {
     >
       <div className="w-6 h-9 rounded-sm bg-muted overflow-hidden flex items-end">
         <div
-          className="w-full rounded-sm transition-all"
+          className="w-full rounded-sm transition-all duration-300"
           style={{
             height: `${Math.max(0, Math.min(100, value))}%`,
-            backgroundColor: colorHex,
+            background: `linear-gradient(to top, ${colorHex}cc, ${colorHex})`,
           }}
         />
       </div>
       <div className="flex flex-col justify-between h-9">
         <span className="text-xs leading-none text-muted-foreground">{label}</span>
-        <span className="text-xs leading-none font-medium tabular-nums">{formatPercent(value)}</span>
+        <span className="text-xs leading-none font-medium font-mono tabular-nums">{formatPercent(value)}</span>
       </div>
     </div>
   )

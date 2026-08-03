@@ -2,10 +2,15 @@
   <img src="./logo.png" width="500">
 </p>
 <p align="center">
+<a href="./docs/README_DE.md">Deutsch</a> / 
 English / 
-<a href="./README_CN.md">中文</a> / 
-<a href="./README_FR.md">Français</a> / 
-<a href="./README_RU.md">Русский</a>
+<a href="./docs/README_ES.md">Español</a> / 
+<a href="./docs/README_FR.md">Français</a> / 
+<a href="./docs/README_IT.md">Italiano</a> / 
+<a href="./docs/README_PT.md">Português</a> / 
+<a href="./docs/README_RU.md">Русский</a> / 
+<a href="./docs/README_CN.md">中文</a> / 
+<a href="./docs/README_TW.md">繁體中文</a>
 </p>
 <hr>
 
@@ -13,18 +18,21 @@ Belochka (белочка, "squirrel") is a single-binary server monitoring tool 
 
 ## Features
 
-- **Real-time dashboard** — server cards with live CPU, memory, disk, and network metrics, color-coded by usage
-- **Detailed server view** — per-core CPU gauges, memory/swap ring charts, disk partition breakdown, network interface throughput, sortable process table
+- **Server groups** — organize servers into flat root-level groups in the sidebar; create, rename, and delete groups, and move servers in or out of a group via drag-and-drop or the "Move to..." menu; click a group to filter the dashboard to its members, with breadcrumb navigation
+- **Real-time dashboard** — server cards with live CPU, memory, disk, and network metrics, color-coded by usage; right-click a card for quick Edit / Delete / Console actions
+- **Detailed server view** — per-core CPU gauges, memory/swap ring charts, disk partition breakdown, network interface throughput
+- **Process management** — dedicated Processes tab with a flat sortable table (user-resizable columns), multi-keyword search, auto-refresh toggle, and kill with SIGTERM/SIGKILL signal selection (sshd/init/systemd protected)
 - **Web terminal** — full interactive SSH console in the browser via xterm.js
 - **System tray icon** — on desktop machines (Windows, macOS, Linux with GNOME/KDE/XFCE), shows a tray icon with **Open Dashboard** and **Quit** menu items; automatically falls back to CLI mode on headless servers
-- **Authentication** — password + session cookie protection; first visit prompts to set a password; rate limiting after 10 failed login attempts (30‑minute lockout)
+- **Authentication** — password + session cookie protection; first visit walks through a two-step setup wizard (choose language → set password with strength meter and confirmation); rate limiting after 10 failed login attempts (30‑minute lockout)
 - **Single binary** — Go backend with embedded React frontend; one file to deploy, nothing else to install
-- **Persistent SSH connections** — automatic reconnection with exponential backoff and keepalive
+- **Persistent SSH connections** — automatic reconnection with exponential backoff and keepalive; test the connection before saving a server, and verify the host-key fingerprint when adding new machines (trust on first use)
 - **Browser-based key upload** — upload SSH private key files directly through the UI; keys are validated, stored with UUID names, and orphan files are automatically cleaned up
 - **Encrypted credential storage** — server passwords encrypted at rest with AES-256-GCM
 - **Cron job management** — view, add, edit, enable/disable, delete, and run cron jobs directly from the server detail page
+- **Batch command** — write a multi-line script and dispatch it to any set of servers from the sidebar; each server's terminal output streams live into the dialog, you can answer interactive prompts, and cancel the whole run at any time
 - **Persistent log file** — all output written to `belochka.log` next to the binary (or in the current working directory when run via `go run`) with automatic retention-based cleanup (default: 3 days)
-- **Multi-language UI** — English, Chinese, French, and Russian; language auto-detected on first visit and switchable from the Settings dialog
+- **Multi-language UI** — English, Simplified Chinese, French, Russian, German, Spanish, Portuguese, Traditional Chinese, and Italian; selectable during first-run setup and switchable from the Settings dialog; browser-detected language pre-selected
 - **In-app settings** — configure port, data directory, language, and log retention directly from the dashboard via a gear icon; no config file editing required
 
 ## Quick Start
@@ -40,7 +48,7 @@ chmod +x belochka-linux-amd64
 belochka-windows-x86-64.exe
 ```
 
-Open `http://localhost:53136` in your browser. On first visit you will be prompted to set a password — this protects the dashboard and all API endpoints. After setting the password you are automatically logged in. Add servers through the UI.
+Open `http://localhost:53136` in your browser. On first visit you will be prompted to choose your language and set a password — this protects the dashboard and all API endpoints. After setup you are automatically logged in. Add servers through the UI.
 
 ## Build from Source
 
@@ -82,7 +90,7 @@ Belochka works out of the box with no configuration. All settings are available 
 |---|---|---|
 | `port` | `53136` | HTTP listen port |
 | `data_dir` | `./data` | Database, encryption key, and uploaded SSH key files (`data/keys/`) |
-| `language` | `""` | UI language (`en`, `zh`, `fr`, `ru`); auto-detected on first visit if empty |
+| `language` | `""` | UI language (`en`, `zh`, `fr`, `ru`, `de`, `es`, `pt`, `zh-TW`, `it`); auto-detected on first visit if empty |
 | `log_path` | `""` | Log file path; defaults to `belochka.log` next to the binary if empty |
 | `log_retention_days` | `3` | Number of days to keep log entries |
 

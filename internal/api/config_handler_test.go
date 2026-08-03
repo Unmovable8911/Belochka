@@ -14,7 +14,7 @@ import (
 	"belochka/internal/hub"
 )
 
-func newConfigRouter(store api.ConfigStore) http.Handler {
+func newConfigRouter(store config.ConfigStore) http.Handler {
 	h := hub.New()
 	return api.NewRouter(h, api.WithConfigStore(store))
 }

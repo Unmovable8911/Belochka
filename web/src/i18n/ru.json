@@ -1,4 +1,7 @@
 {
+  "sidebar": {
+    "servers": "Серверы"
+  },
   "dashboard": {
     "title": "Панель мониторинга",
     "noServers": "Серверы не настроены",
@@ -18,14 +21,13 @@
     "memory": "Память",
     "disk": "Диск",
     "network": "Сеть",
-    "processes": "Процессы",
-    "noProcessData": "Данные о процессах недоступны.",
     "edit": "Изменить",
     "delete": "Удалить",
     "console": "Консоль",
     "swap": "Подкачка",
     "failedToLoad": "Не удалось загрузить сервер",
-    "coresCount": "{{count}} ядер"
+    "coresCount": "{{count}} ядер",
+    "tabProcesses": "Процессы"
   },
   "serverCard": {
     "cpu": "CPU",
@@ -85,8 +87,7 @@
   "common": {
     "save": "Сохранить",
     "cancel": "Отмена",
-    "delete": "Удалить",
-    "close": "Закрыть"
+    "delete": "Удалить"
   },
   "connection": {
     "lost": "Соединение потеряно, переподключение..."
@@ -95,13 +96,7 @@
     "noInterfaces": "Нет сетевых интерфейсов",
     "waitingForData": "Ожидание данных..."
   },
-  "processTable": {
-    "pid": "PID",
-    "user": "Пользователь",
-    "cpuPct": "CPU%",
-    "memPct": "Память%",
-    "command": "Команда"
-  },
+  "processTable": {},
   "console": {
     "authPassword": "Пароль",
     "authKey": "Ключ",
@@ -111,12 +106,22 @@
     "disconnectedMessage": "Сессия отключена.",
     "reconnect": "Переподключить"
   },
-  "language": {
-    "label": "Язык"
-  },
+  "language": {},
   "auth": {
     "setupTitle": "Установка пароля",
     "setupHint": "Создайте пароль для защиты панели Belochka.",
+    "selectLanguage": "Выберите язык",
+    "continue": "Продолжить",
+    "back": "Назад",
+    "passwordStrength": {
+      "0": "Очень слабый",
+      "1": "Слабый",
+      "2": "Средний",
+      "3": "Надёжный",
+      "4": "Очень надёжный"
+    },
+    "passwordMatch": "Пароли совпадают",
+    "passwordNoMatch": "Пароли не совпадают",
     "loginHint": "Введите пароль для продолжения.",
     "password": "Пароль",
     "confirmPassword": "Подтвердите пароль",
@@ -138,26 +143,106 @@
     "passwordChanged": "Пароль успешно изменён.",
     "passwordChangeFailed": "Не удалось изменить пароль.",
     "incorrectPassword": "Текущий пароль неверен.",
-    "passwordTooShort": "Пароль должен содержать не менее 6 символов.",
-    "loggedOut": "Выполнен выход из системы."
+    "passwordTooShort": "Пароль должен содержать не менее 6 символов."
   },
   "settings": {
     "title": "Настройки",
+    "description": "Настройте параметры приложения и измените пароль.",
+    "sections": {
+      "general": "Общие",
+      "server": "Сервер",
+      "logging": "Журналирование",
+      "security": "Безопасность"
+    },
     "language": "Язык",
+    "languageDesc": "Язык интерфейса. Изменения вступают в силу сразу после сохранения.",
     "logPath": "Путь к журналу",
     "logPathPlaceholder": "По умолчанию для платформы",
+    "logPathDesc": "Каталог для файлов журналов. Оставьте пустым для значения по умолчанию.",
     "logRetentionDays": "Хранение журнала (дней)",
+    "logRetentionDesc": "Количество дней хранения журналов перед автоматической очисткой.",
     "port": "Порт",
+    "portDesc": "HTTP-порт веб-сервера. Требуется перезапуск для вступления в силу.",
     "dataDir": "Каталог данных",
+    "dataDirDesc": "Каталог для базы данных SQLite и файлов конфигурации. Требуется перезапуск.",
     "save": "Сохранить",
     "saving": "Сохранение...",
     "savedSuccess": "Настройки сохранены",
     "saveFailed": "Не удалось сохранить настройки",
     "theme": "Тема",
-    "themeLight": "Светлая",
-    "themeDark": "Тёмная",
-    "themeSystem": "Как в системе",
-    "restartRequired": "Для применения этих настроек требуется перезапуск:"
+    "restartDialog": {
+      "title": "Требуется перезапуск",
+      "message": "Эти настройки вступят в силу после перезапуска сервера.",
+      "fields": "Изменено: {{fields}}",
+      "restartNow": "Перезапустить",
+      "later": "Позже",
+      "restarting": "Перезапуск сервера...",
+      "restartFailed": "Не удалось перезапустить. Пожалуйста, перезапустите вручную."
+    }
+  },
+  "groups": {
+    "newGroup": "Новая группа",
+    "rename": "Переименовать",
+    "delete": "Удалить",
+    "moveTo": "Переместить в...",
+    "noGroup": "Без группы",
+    "renameGroupTitle": "Переименовать группу",
+    "deleteGroupTitle": "Удалить группу",
+    "deleteGroupConfirm": "Вы уверены, что хотите удалить <strong>{{name}}</strong>? Его серверы станут без группы.",
+    "deleting": "Удаление...",
+    "namePlaceholder": "Имя группы",
+    "createdSuccess": "Группа «{{name}}» создана",
+    "renamedSuccess": "Группа переименована в «{{name}}»",
+    "deletedSuccess": "Группа «{{name}}» удалена",
+    "createFailed": "Не удалось создать группу",
+    "renameFailed": "Не удалось переименовать группу",
+    "deleteFailed": "Не удалось удалить группу",
+    "moveFailed": "Не удалось переместить",
+    "deleteFor": "Удалить «{{name}}»",
+    "nameDuplicate": "Группа с таким именем уже существует"
+  },
+  "breadcrumb": {
+    "allServers": "Все серверы"
+  },
+  "batch": {
+    "trigger": "Пакетная команда",
+    "title": "Пакетная команда",
+    "script": "Скрипт",
+    "scriptPlaceholder": "Напишите shell-скрипт для запуска на выбранных серверах...",
+    "targets": "Целевые серверы",
+    "selectAll": "Все серверы",
+    "noServers": "Серверы не настроены",
+    "runOn": "Запустить на {{count}} серверах",
+    "dispatching": "Отправка...",
+    "runInProgress": "Пакетный запуск уже выполняется",
+    "dispatchFailed": "Не удалось отправить пакетный запуск",
+    "viewLastResult": "Посмотреть последний результат",
+    "newCommand": "Новая команда",
+    "cancelRun": "Отменить запуск",
+    "statusPending": "Ожидание",
+    "statusRunning": "Выполняется",
+    "statusSuccess": "Успешно",
+    "statusFailed": "Ошибка",
+    "exitCode": "Код {{code}}",
+    "truncated": "Вывод обрезан",
+    "inputPlaceholder": "Ввод для {{name}}...",
+    "inputDisabled": "Процесс завершён",
+    "errorPrefix": "Ошибка: {{message}}",
+    "reconnecting": "Переподключение...",
+    "description": "Запустите shell-скрипт на нескольких серверах и следите за выводом в реальном времени",
+    "filterPlaceholder": "Фильтр серверов",
+    "noMatches": "Нет подходящих серверов",
+    "lines": "{{count}} строк",
+    "needScript": "Сначала введите скрипт",
+    "needSelection": "Выберите хотя бы один сервер",
+    "shortcutRun": "Ctrl+Enter для запуска",
+    "overview": "{{done}}/{{total}} завершено",
+    "overviewDone": "{{done}}/{{total}} завершено за {{duration}}",
+    "copyOutput": "Копировать вывод",
+    "copied": "Скопировано",
+    "send": "Отправить",
+    "jumpToBottom": "Вниз",
+    "emptyResults": "Нет запусков для отображения"
   },
   "cronJobs": {
     "tabOverview": "Обзор",
@@ -179,8 +264,6 @@
     "fieldMonth": "Месяц",
     "fieldDayOfWeek": "День недели",
     "fieldCommand": "Команда",
-    "fieldInvalid": "Неверное значение",
-    "fieldCommandRequired": "Команда обязательна",
     "save": "Сохранить",
     "saving": "Сохранение...",
     "cancel": "Отмена",
@@ -216,5 +299,31 @@
       "5": "пятницу",
       "6": "субботу"
     }
+  },
+  "processes": {
+    "loading": "Загрузка процессов...",
+    "empty": "Процессы не найдены.",
+    "autoRefresh": "Автообновление",
+    "refresh": "Обновить",
+    "searchPlaceholder": "Поиск процессов...",
+    "processCount": "{{count}} процессов",
+    "colPID": "PID",
+    "colUser": "Пользователь",
+    "colRSS": "Память",
+    "colCPU": "CPU%",
+    "colMEM": "MEM%",
+    "colETime": "Время",
+    "colCommand": "Команда",
+    "kill": "Завершить",
+    "ppid": "PPID: {{ppid}}",
+    "confirmKillTitle": "Подтверждение завершения",
+    "confirmKillDesc": "Вы собираетесь завершить:",
+    "signalSIGTERM": "SIGTERM - Плавное завершение",
+    "signalSIGKILL": "SIGKILL - Принудительное завершение",
+    "cancel": "Отмена",
+    "confirm": "Подтвердить",
+    "killSuccess": "Процесс {{pid}} успешно завершён",
+    "killFailed": "Не удалось завершить процесс",
+    "protectedProcess": "Этот процесс защищён и не может быть завершён"
   }
 }

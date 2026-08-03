@@ -286,7 +286,8 @@ describe("EditServerDialog", () => {
     )
     const dialog = screen.getByRole("dialog")
 
-    expect(within(dialog).getByLabelText("Key File Path")).toHaveValue("/home/user/.ssh/id_rsa")
+    expect(within(dialog).getByText("Key File Path")).toBeInTheDocument()
+    expect(within(dialog).getByText("/home/user/.ssh/id_rsa")).toBeInTheDocument()
     expect(within(dialog).queryByLabelText("Password")).toBeNull()
   })
 })

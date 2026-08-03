@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as api from "@/api/client"
+import appIcon from "@/assets/icon.png"
 
 export default function LoginPage() {
   const { t } = useTranslation()
@@ -66,6 +67,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
+          <img src={appIcon} alt="" className="mx-auto mb-3 max-w-14 w-full rounded-lg" aria-hidden />
           <h1 className="text-2xl font-bold">Belochka</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {t("auth.loginHint")}

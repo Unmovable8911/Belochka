@@ -1,4 +1,7 @@
 {
+  "sidebar": {
+    "servers": "Servers"
+  },
   "dashboard": {
     "title": "Dashboard",
     "noServers": "No servers configured",
@@ -18,14 +21,13 @@
     "memory": "Memory",
     "disk": "Disk",
     "network": "Network",
-    "processes": "Processes",
-    "noProcessData": "No process data available.",
     "edit": "Edit",
     "delete": "Delete",
     "console": "Console",
     "swap": "Swap",
     "failedToLoad": "Failed to load server",
-    "coresCount": "{{count}} cores"
+    "coresCount": "{{count}} cores",
+    "tabProcesses": "Processes"
   },
   "serverCard": {
     "cpu": "CPU",
@@ -85,8 +87,7 @@
   "common": {
     "save": "Save",
     "cancel": "Cancel",
-    "delete": "Delete",
-    "close": "Close"
+    "delete": "Delete"
   },
   "connection": {
     "lost": "Connection lost, reconnecting..."
@@ -95,13 +96,7 @@
     "noInterfaces": "No network interfaces",
     "waitingForData": "Waiting for data..."
   },
-  "processTable": {
-    "pid": "PID",
-    "user": "User",
-    "cpuPct": "CPU%",
-    "memPct": "Memory%",
-    "command": "Command"
-  },
+  "processTable": {},
   "console": {
     "authPassword": "Password",
     "authKey": "Key",
@@ -111,12 +106,22 @@
     "disconnectedMessage": "Session disconnected.",
     "reconnect": "Reconnect"
   },
-  "language": {
-    "label": "Language"
-  },
+  "language": {},
   "auth": {
     "setupTitle": "Set Up Password",
     "setupHint": "Create a password to protect your Belochka dashboard.",
+    "selectLanguage": "Select Language",
+    "continue": "Continue",
+    "back": "Back",
+    "passwordStrength": {
+      "0": "Very Weak",
+      "1": "Weak",
+      "2": "Fair",
+      "3": "Strong",
+      "4": "Very Strong"
+    },
+    "passwordMatch": "Passwords match",
+    "passwordNoMatch": "Passwords do not match",
     "loginHint": "Enter your password to continue.",
     "password": "Password",
     "confirmPassword": "Confirm Password",
@@ -138,26 +143,106 @@
     "passwordChanged": "Password changed successfully.",
     "passwordChangeFailed": "Failed to change password.",
     "incorrectPassword": "Current password is incorrect.",
-    "passwordTooShort": "Password must be at least 6 characters.",
-    "loggedOut": "Logged out successfully."
+    "passwordTooShort": "Password must be at least 6 characters."
   },
   "settings": {
     "title": "Settings",
+    "description": "Configure application settings and change your password.",
+    "sections": {
+      "general": "General",
+      "server": "Server",
+      "logging": "Logging",
+      "security": "Security"
+    },
     "language": "Language",
+    "languageDesc": "Interface display language. Changes take effect immediately after saving.",
     "logPath": "Log Path",
     "logPathPlaceholder": "Platform default",
+    "logPathDesc": "Directory for application log files. Leave empty for platform default.",
     "logRetentionDays": "Log Retention (days)",
+    "logRetentionDesc": "Number of days to keep log files before automatic cleanup.",
     "port": "Port",
+    "portDesc": "HTTP port the web server listens on. Requires restart to take effect.",
     "dataDir": "Data Directory",
+    "dataDirDesc": "Directory for SQLite database and configuration files. Requires restart to take effect.",
     "save": "Save",
     "saving": "Saving...",
     "savedSuccess": "Settings saved",
     "saveFailed": "Failed to save settings",
     "theme": "Theme",
-    "themeLight": "Light",
-    "themeDark": "Dark",
-    "themeSystem": "System",
-    "restartRequired": "These settings require a restart to take effect:"
+    "restartDialog": {
+      "title": "Restart Required",
+      "message": "These settings will take effect after restarting the server.",
+      "fields": "Changed: {{fields}}",
+      "restartNow": "Restart Now",
+      "later": "Later",
+      "restarting": "Restarting server...",
+      "restartFailed": "Restart failed. Please restart manually."
+    }
+  },
+  "groups": {
+    "newGroup": "New Group",
+    "rename": "Rename",
+    "delete": "Delete",
+    "moveTo": "Move to...",
+    "noGroup": "No Group",
+    "renameGroupTitle": "Rename Group",
+    "deleteGroupTitle": "Delete Group",
+    "deleteGroupConfirm": "Are you sure you want to delete <strong>{{name}}</strong>? Its servers will become ungrouped.",
+    "deleting": "Deleting...",
+    "namePlaceholder": "Group name",
+    "createdSuccess": "Group \"{{name}}\" created",
+    "renamedSuccess": "Group renamed to \"{{name}}\"",
+    "deletedSuccess": "Group \"{{name}}\" deleted",
+    "createFailed": "Failed to create group",
+    "renameFailed": "Failed to rename group",
+    "deleteFailed": "Failed to delete group",
+    "moveFailed": "Failed to move",
+    "deleteFor": "Delete {{name}}",
+    "nameDuplicate": "A group with this name already exists"
+  },
+  "breadcrumb": {
+    "allServers": "All Servers"
+  },
+  "batch": {
+    "trigger": "Batch Command",
+    "title": "Batch Command",
+    "script": "Script",
+    "scriptPlaceholder": "Write a shell script to run on the selected servers...",
+    "targets": "Target Servers",
+    "selectAll": "All Servers",
+    "noServers": "No servers configured",
+    "runOn": "Run on {{count}} servers",
+    "dispatching": "Dispatching...",
+    "runInProgress": "Another batch run is already in progress",
+    "dispatchFailed": "Failed to dispatch batch run",
+    "viewLastResult": "View last result",
+    "newCommand": "New command",
+    "cancelRun": "Cancel run",
+    "statusPending": "Pending",
+    "statusRunning": "Running",
+    "statusSuccess": "Success",
+    "statusFailed": "Failed",
+    "exitCode": "Exit {{code}}",
+    "truncated": "Output truncated",
+    "inputPlaceholder": "Type input for {{name}}...",
+    "inputDisabled": "Process finished",
+    "errorPrefix": "Error: {{message}}",
+    "reconnecting": "Reconnecting...",
+    "description": "Run a shell script on multiple servers and watch live output",
+    "filterPlaceholder": "Filter servers",
+    "noMatches": "No servers match",
+    "lines": "{{count}} lines",
+    "needScript": "Enter a script first",
+    "needSelection": "Select at least one server",
+    "shortcutRun": "Ctrl+Enter to run",
+    "overview": "{{done}}/{{total}} done",
+    "overviewDone": "{{done}}/{{total}} done in {{duration}}",
+    "copyOutput": "Copy output",
+    "copied": "Copied",
+    "send": "Send",
+    "jumpToBottom": "Jump to bottom",
+    "emptyResults": "No batch run to show"
   },
   "cronJobs": {
     "tabOverview": "Overview",
@@ -179,8 +264,6 @@
     "fieldMonth": "Month",
     "fieldDayOfWeek": "Day of Week",
     "fieldCommand": "Command",
-    "fieldInvalid": "Invalid value",
-    "fieldCommandRequired": "Command is required",
     "save": "Save",
     "saving": "Saving...",
     "cancel": "Cancel",
@@ -216,5 +299,31 @@
       "5": "Friday",
       "6": "Saturday"
     }
+  },
+  "processes": {
+    "loading": "Loading processes...",
+    "empty": "No processes found.",
+    "autoRefresh": "Auto-refresh",
+    "refresh": "Refresh",
+    "searchPlaceholder": "Search processes...",
+    "processCount": "{{count}} processes",
+    "colPID": "PID",
+    "colUser": "User",
+    "colRSS": "Memory",
+    "colCPU": "CPU%",
+    "colMEM": "MEM%",
+    "colETime": "Elapsed",
+    "colCommand": "Command",
+    "kill": "Kill",
+    "ppid": "PPID: {{ppid}}",
+    "confirmKillTitle": "Confirm Kill Process",
+    "confirmKillDesc": "You are about to kill:",
+    "signalSIGTERM": "SIGTERM - Graceful termination",
+    "signalSIGKILL": "SIGKILL - Force kill",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "killSuccess": "Process {{pid}} killed successfully",
+    "killFailed": "Failed to kill process",
+    "protectedProcess": "This process is protected and cannot be killed"
   }
 }

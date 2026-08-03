@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"belochka/internal/model"
+	"belochka/internal/monitor/parser"
 )
 
 // sectionDelimiter separates the output of each command in the combined SSH exec.
@@ -18,7 +19,6 @@ func CollectCommand() string {
 		"cat /proc/meminfo",
 		"df -B1 -x tmpfs -x devtmpfs -x overlay -x squashfs",
 		"cat /proc/net/dev",
-		"top -bn1 -o %CPU | head -27",
 		"hostname",
 		"uname -r",
 		"cat /proc/uptime",
@@ -37,7 +37,7 @@ func CollectCommand() string {
 	return strings.Join(parts, "; ")
 }
 
-const sectionCount = 10
+const sectionCount = 9
 
 // ParseCombinedOutput splits the combined SSH output by sectionDelimiter
 // and parses each section into the corresponding metrics.
@@ -55,37 +55,32 @@ func ParseCombinedOutput(output string) (model.Metrics, error) {
 	var m model.Metrics
 	var err error
 
-	m.CPU, err = ParseCPU(sections[0])
+	m.CPU, err = parser.ParseCPU(sections[0])
 	if err != nil {
 		return m, fmt.Errorf("parse cpu: %w", err)
 	}
 
-	m.Memory, err = ParseMemory(sections[1])
+	m.Memory, err = parser.ParseMemory(sections[1])
 	if err != nil {
 		return m, fmt.Errorf("parse memory: %w", err)
 	}
 
-	m.Disk, err = ParseDisk(sections[2])
+	m.Disk, err = parser.ParseDisk(sections[2])
 	if err != nil {
 		return m, fmt.Errorf("parse disk: %w", err)
 	}
 
-	m.Network, err = ParseNetwork(sections[3])
+	m.Network, err = parser.ParseNetwork(sections[3])
 	if err != nil {
 		return m, fmt.Errorf("parse network: %w", err)
 	}
 
-	m.Process, err = ParseProcesses(sections[4])
-	if err != nil {
-		return m, fmt.Errorf("parse processes: %w", err)
-	}
-
-	m.System, err = ParseSystemInfo(
-		sections[5], // hostname
-		sections[6], // uname -r
-		sections[7], // /proc/uptime
-		sections[8], // /etc/os-release
-		sections[9], // nproc
+	m.System, err = parser.ParseSystemInfo(
+		sections[4], // hostname
+		sections[5], // uname -r
+		sections[6], // /proc/uptime
+		sections[7], // /etc/os-release
+		sections[8], // nproc
 	)
 	if err != nil {
 		return m, fmt.Errorf("parse system info: %w", err)
@@ -117,19 +112,12 @@ func ComputeCPUUsage(prev, curr model.CPUCore) model.CPUUsage {
 
 	idleDelta := curr.Idle - prev.Idle
 	iowaitDelta := curr.IOWait - prev.IOWait
-	userDelta := (curr.User - prev.User) + (curr.Nice - prev.Nice)
-	systemDelta := curr.System - prev.System
-	stealDelta := curr.Steal - prev.Steal
 
 	usedDelta := totalDelta - idleDelta - iowaitDelta
 
 	return model.CPUUsage{
-		Name:      curr.Name,
-		UsedPct:   cpuPct(usedDelta, totalDelta),
-		UserPct:   cpuPct(userDelta, totalDelta),
-		SystemPct: cpuPct(systemDelta, totalDelta),
-		IOWaitPct: cpuPct(iowaitDelta, totalDelta),
-		StealPct:  cpuPct(stealDelta, totalDelta),
+		Name:    curr.Name,
+		UsedPct: cpuPct(usedDelta, totalDelta),
 	}
 }
 

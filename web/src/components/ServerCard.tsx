@@ -14,6 +14,10 @@ import type { ServerInfo, ServerMetrics, DiskPartition } from "@/types/server"
 interface ServerCardProps {
   server: ServerInfo
   metrics?: ServerMetrics
+  /** Optional right-click handler for the card surface. The card stays
+      presentational: it forwards its own event and server, and menu
+      construction lives in the parent. */
+  onContextMenu?: (e: React.MouseEvent, server: ServerInfo) => void
 }
 function getRootPartition(partitions: DiskPartition[]): DiskPartition | null {
   return partitions.find((p) => p.mountPoint === "/") ?? null
@@ -26,8 +30,22 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
     case "error":
     case "failed":
       return "destructive"
+    case "reconnecting":
+      return "secondary"
     default:
       return "secondary"
+  }
+}
+
+function statusDotColor(status: string): string {
+  switch (status) {
+    case "connected":
+      return "bg-emerald-500"
+    case "failed":
+    case "error":
+      return "bg-red-500"
+    default:
+      return "bg-amber-500"
   }
 }
 
@@ -65,7 +83,7 @@ function getDisconnectedDisplay(server: ServerInfo, t: (key: string, opts?: Reco
   }
 }
 
-const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCardProps) {
+const ServerCard = React.memo(function ServerCard({ server, metrics, onContextMenu }: ServerCardProps) {
   const { t } = useTranslation()
   const [reconnecting, setReconnecting] = useState(false)
   const disconnected = getDisconnectedDisplay(server, t)
@@ -83,7 +101,7 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
     }
   }
 
-  const cpuPercent = metrics?.cpu.aggregate.usagePercent
+  const cpuPercent = metrics?.aggregate?.usagePercent
   const memPercent = metrics?.memory
     ? (metrics.memory.used / metrics.memory.total) * 100
     : undefined
@@ -103,18 +121,30 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
       to={`/server/${server.id}`}
       className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
       aria-label={server.name}
+      onContextMenu={(e) => {
+        if (onContextMenu) {
+          e.preventDefault()
+          e.stopPropagation()
+          onContextMenu(e, server)
+        }
+      }}
     >
-      <Card data-testid="server-card" className="hover:shadow-md transition-shadow cursor-pointer">
+      <Card data-testid="server-card" className="h-[300px] hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30 transition-all duration-200 cursor-pointer group">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{server.name}</CardTitle>
-            <Badge variant={statusVariant(server.status)}>{server.status}</Badge>
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <CardTitle className="truncate">{server.name}</CardTitle>
+            <Badge variant={statusVariant(server.status)} className="gap-1.5">
+              <span className={`size-1.5 rounded-full ${statusDotColor(server.status)}`} />
+              {server.status}
+            </Badge>
           </div>
-          <CardDescription>{server.host}</CardDescription>
+          <CardDescription className="truncate">{server.host}</CardDescription>
         </CardHeader>
 
         {disconnected ? (
-          <CardContent className="min-h-[140px] flex flex-col items-center justify-center text-center gap-2">
+          <CardContent className={`flex flex-1 flex-col items-center justify-center text-center gap-2 border-l-4 ${
+            server.status === "failed" ? "border-l-destructive" : "border-l-amber-500"
+          }`}>
             {disconnected.icon}
             <p className="text-sm text-muted-foreground">{disconnected.message}</p>
             {server.status === "failed" && (
@@ -131,7 +161,7 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
             )}
           </CardContent>
         ) : metrics ? (
-          <CardContent className="space-y-3">
+          <CardContent className="flex flex-1 flex-col justify-center space-y-3">
             {cpuPercent !== undefined && (
               <UsageBar label={t("serverCard.cpu")} value={cpuPercent} rightText={formatPercent(cpuPercent)} ariaLabel="CPU usage" />
             )}
@@ -150,15 +180,13 @@ const ServerCard = React.memo(function ServerCard({ server, metrics }: ServerCar
             )}
 
             {hasNetwork && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span>{t("serverCard.network")}</span>
-                  <span>
-                    <span aria-label="receive">↓ {formatNetworkSpeed(aggregatedRx)}</span>
-                    {" "}
-                    <span aria-label="transmit">↑ {formatNetworkSpeed(aggregatedTx)}</span>
-                  </span>
-                </div>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span>{t("serverCard.network")}</span>
+                <span className="font-mono tabular-nums whitespace-nowrap">
+                  <span aria-label="receive">↓ {formatNetworkSpeed(aggregatedRx)}</span>
+                  {" "}
+                  <span aria-label="transmit">↑ {formatNetworkSpeed(aggregatedTx)}</span>
+                </span>
               </div>
             )}
           </CardContent>

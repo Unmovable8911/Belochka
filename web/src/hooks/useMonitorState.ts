@@ -37,7 +37,12 @@ export interface RemoveServerAction {
 
 export interface UpdateServerAction {
   type: "update_server"
-  data: { serverId: string; name: string; host: string }
+  data: { serverId: string; name?: string; host?: string; group_id?: string }
+}
+
+export interface AddServerAction {
+  type: "add_server"
+  data: { id: string; name: string; host: string; group_id?: string }
 }
 
 export type MonitorAction =
@@ -45,6 +50,7 @@ export type MonitorAction =
   | WsConnectedAction
   | RemoveServerAction
   | UpdateServerAction
+  | AddServerAction
 
 // --- Reducer ---
 
@@ -77,9 +83,35 @@ export function monitorReducer(state: MonitorState, action: MonitorAction): Moni
         ...state,
         servers: state.servers.map((s) =>
           s.id === action.data.serverId
-            ? { ...s, name: action.data.name, host: action.data.host }
+            ? {
+                ...s,
+                ...(action.data.name !== undefined ? { name: action.data.name } : {}),
+                ...(action.data.host !== undefined ? { host: action.data.host } : {}),
+                ...("group_id" in action.data ? { group_id: action.data.group_id } : {}),
+              }
             : s
         ),
+      }
+    }
+
+    case "add_server": {
+      // Optimistic: add the server before the next WebSocket snapshot arrives.
+      // If the server is already in the list (race with WS), skip the duplicate.
+      if (state.servers.some((s) => s.id === action.data.id)) {
+        return state
+      }
+      return {
+        ...state,
+        servers: [
+          ...state.servers,
+          {
+            id: action.data.id,
+            name: action.data.name,
+            host: action.data.host,
+            status: "connecting",
+            group_id: action.data.group_id,
+          },
+        ],
       }
     }
 

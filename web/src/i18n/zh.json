@@ -1,4 +1,7 @@
 {
+  "sidebar": {
+    "servers": "服务器"
+  },
   "dashboard": {
     "title": "仪表盘",
     "noServers": "未配置服务器",
@@ -18,8 +21,7 @@
     "memory": "内存",
     "disk": "磁盘",
     "network": "网络",
-    "processes": "进程",
-    "noProcessData": "暂无进程数据。",
+    "tabProcesses": "进程",
     "edit": "编辑",
     "delete": "删除",
     "console": "控制台",
@@ -85,8 +87,7 @@
   "common": {
     "save": "保存",
     "cancel": "取消",
-    "delete": "删除",
-    "close": "关闭"
+    "delete": "删除"
   },
   "connection": {
     "lost": "连接已断开，正在重新连接..."
@@ -95,13 +96,7 @@
     "noInterfaces": "无网络接口",
     "waitingForData": "等待数据..."
   },
-  "processTable": {
-    "pid": "PID",
-    "user": "用户",
-    "cpuPct": "CPU%",
-    "memPct": "内存%",
-    "command": "命令"
-  },
+  "processTable": {},
   "console": {
     "authPassword": "密码",
     "authKey": "密钥",
@@ -111,12 +106,22 @@
     "disconnectedMessage": "会话已断开。",
     "reconnect": "重新连接"
   },
-  "language": {
-    "label": "语言"
-  },
+  "language": {},
   "auth": {
     "setupTitle": "设置密码",
     "setupHint": "创建密码以保护 Belochka 控制台。",
+    "selectLanguage": "选择语言",
+    "continue": "继续",
+    "back": "返回",
+    "passwordStrength": {
+      "0": "非常弱",
+      "1": "弱",
+      "2": "一般",
+      "3": "强",
+      "4": "非常强"
+    },
+    "passwordMatch": "密码匹配",
+    "passwordNoMatch": "密码不匹配",
     "loginHint": "请输入密码以继续。",
     "password": "密码",
     "confirmPassword": "确认密码",
@@ -138,26 +143,106 @@
     "passwordChanged": "密码修改成功。",
     "passwordChangeFailed": "密码修改失败。",
     "incorrectPassword": "当前密码错误。",
-    "passwordTooShort": "密码长度不能少于6个字符。",
-    "loggedOut": "已退出登录。"
+    "passwordTooShort": "密码长度不能少于6个字符。"
   },
   "settings": {
     "title": "设置",
+    "description": "配置应用设置并修改密码。",
+    "sections": {
+      "general": "通用",
+      "server": "服务器",
+      "logging": "日志",
+      "security": "安全"
+    },
     "language": "语言",
+    "languageDesc": "界面显示语言。保存后立即生效。",
     "logPath": "日志路径",
     "logPathPlaceholder": "平台默认",
+    "logPathDesc": "应用日志文件目录。留空使用平台默认路径。",
     "logRetentionDays": "日志保留天数",
+    "logRetentionDesc": "日志文件自动清理前的保留天数。",
     "port": "端口",
+    "portDesc": "Web 服务器监听的 HTTP 端口。需要重启才能生效。",
     "dataDir": "数据目录",
+    "dataDirDesc": "SQLite 数据库和配置文件目录。需要重启才能生效。",
     "save": "保存",
     "saving": "保存中...",
     "savedSuccess": "设置已保存",
     "saveFailed": "保存设置失败",
     "theme": "主题",
-    "themeLight": "亮色",
-    "themeDark": "暗色",
-    "themeSystem": "跟随系统",
-    "restartRequired": "以下设置需要重启才能生效："
+    "restartDialog": {
+      "title": "需要重启",
+      "message": "这些设置将在重启服务器后生效。",
+      "fields": "已更改：{{fields}}",
+      "restartNow": "立即重启",
+      "later": "稍后",
+      "restarting": "正在重启服务器...",
+      "restartFailed": "重启失败，请手动重启。"
+    }
+  },
+  "groups": {
+    "newGroup": "新建分组",
+    "rename": "重命名",
+    "delete": "删除",
+    "moveTo": "移动到...",
+    "noGroup": "无分组",
+    "renameGroupTitle": "重命名分组",
+    "deleteGroupTitle": "删除分组",
+    "deleteGroupConfirm": "确定要删除 <strong>{{name}}</strong> 吗？其中的服务器将变为未分组。",
+    "deleting": "删除中...",
+    "namePlaceholder": "分组名称",
+    "createdSuccess": "分组 \"{{name}}\" 已创建",
+    "renamedSuccess": "分组已重命名为 \"{{name}}\"",
+    "deletedSuccess": "分组 \"{{name}}\" 已删除",
+    "createFailed": "创建分组失败",
+    "renameFailed": "重命名分组失败",
+    "deleteFailed": "删除分组失败",
+    "moveFailed": "移动失败",
+    "deleteFor": "删除 {{name}}",
+    "nameDuplicate": "同级已存在同名分组"
+  },
+  "breadcrumb": {
+    "allServers": "全部服务器"
+  },
+  "batch": {
+    "trigger": "批量命令",
+    "title": "批量命令",
+    "script": "脚本",
+    "scriptPlaceholder": "编写要在所选服务器上运行的 shell 脚本……",
+    "targets": "目标服务器",
+    "selectAll": "全部服务器",
+    "noServers": "尚未配置服务器",
+    "runOn": "在 {{count}} 台服务器上运行",
+    "dispatching": "正在分发……",
+    "runInProgress": "已有批量运行正在进行中",
+    "dispatchFailed": "批量运行分发失败",
+    "viewLastResult": "查看上次结果",
+    "newCommand": "新命令",
+    "cancelRun": "取消运行",
+    "statusPending": "待处理",
+    "statusRunning": "运行中",
+    "statusSuccess": "成功",
+    "statusFailed": "失败",
+    "exitCode": "退出码 {{code}}",
+    "truncated": "输出已截断",
+    "inputPlaceholder": "为 {{name}} 输入内容……",
+    "inputDisabled": "进程已结束",
+    "errorPrefix": "错误：{{message}}",
+    "reconnecting": "正在重新连接……",
+    "description": "在多个服务器上运行 shell 脚本并实时查看输出",
+    "filterPlaceholder": "过滤服务器",
+    "noMatches": "没有匹配的服务器",
+    "lines": "{{count}} 行",
+    "needScript": "请先输入脚本",
+    "needSelection": "请至少选择一台服务器",
+    "shortcutRun": "Ctrl+Enter 运行",
+    "overview": "{{done}}/{{total}} 已完成",
+    "overviewDone": "{{done}}/{{total}} 已完成,用时 {{duration}}",
+    "copyOutput": "复制输出",
+    "copied": "已复制",
+    "send": "发送",
+    "jumpToBottom": "跳到底部",
+    "emptyResults": "没有可显示的批量运行"
   },
   "cronJobs": {
     "tabOverview": "概览",
@@ -179,8 +264,6 @@
     "fieldMonth": "月",
     "fieldDayOfWeek": "星期",
     "fieldCommand": "命令",
-    "fieldInvalid": "无效值",
-    "fieldCommandRequired": "命令不能为空",
     "save": "保存",
     "saving": "保存中...",
     "cancel": "取消",
@@ -216,5 +299,31 @@
       "5": "五",
       "6": "六"
     }
+  },
+  "processes": {
+    "loading": "加载进程中...",
+    "empty": "未找到进程。",
+    "autoRefresh": "自动刷新",
+    "refresh": "刷新",
+    "searchPlaceholder": "搜索进程...",
+    "processCount": "{{count}} 个进程",
+    "colPID": "PID",
+    "colUser": "用户",
+    "colRSS": "内存",
+    "colCPU": "CPU%",
+    "colMEM": "MEM%",
+    "colETime": "运行时间",
+    "colCommand": "命令",
+    "kill": "结束进程",
+    "ppid": "PPID: {{ppid}}",
+    "confirmKillTitle": "确认结束进程",
+    "confirmKillDesc": "您即将结束以下进程：",
+    "signalSIGTERM": "SIGTERM - 优雅终止",
+    "signalSIGKILL": "SIGKILL - 强制终止",
+    "cancel": "取消",
+    "confirm": "确认",
+    "killSuccess": "进程 {{pid}} 已成功终止",
+    "killFailed": "结束进程失败",
+    "protectedProcess": "该进程受保护，无法终止"
   }
 }

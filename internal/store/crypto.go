@@ -43,6 +43,35 @@ func loadOrGenerateKey(path string) ([]byte, bool, error) {
 	return key, true, nil
 }
 
+// Cipher encrypts and decrypts opaque strings. A single implementation
+// (AESCipher) is provided; callers that need a different cipher can
+// implement this interface and inject it via newSQLiteStoreWithKey.
+type Cipher interface {
+	Encrypt(plaintext string) (string, error)
+	Decrypt(ciphertextHex string) (string, error)
+}
+
+// AESCipher implements Cipher using AES-256-GCM with a fixed 32-byte key.
+type AESCipher struct {
+	key []byte
+}
+
+// NewAESCipher creates an AESCipher with the given 32-byte key.
+func NewAESCipher(key []byte) *AESCipher {
+	return &AESCipher{key: key}
+}
+
+// Encrypt encrypts plaintext using AES-256-GCM.
+// Returns hex(nonce || ciphertext || authentication-tag).
+func (c *AESCipher) Encrypt(plaintext string) (string, error) {
+	return encrypt(c.key, plaintext)
+}
+
+// Decrypt decrypts a hex-encoded ciphertext produced by Encrypt.
+func (c *AESCipher) Decrypt(ciphertextHex string) (string, error) {
+	return decrypt(c.key, ciphertextHex)
+}
+
 // encrypt encrypts plaintext using AES-256-GCM with the given 32-byte key.
 // Returns hex(nonce || ciphertext || 16-byte-authentication-tag) where the
 // nonce is 12 random bytes and the tag is appended by GCM Seal.

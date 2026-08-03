@@ -45,11 +45,11 @@ function createMockWebSocketClass() {
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
-    cpu: { aggregate: { usagePercent: 0 }, cores: [] },
-    memory: { total: 0, used: 0, available: 0, swapTotal: 0, swapUsed: 0 },
+    aggregate: { usagePercent: 0 },
+    cores: [],
+    memory: { total: 0, used: 0, swapTotal: 0, swapUsed: 0 },
     disk: { partitions: [] },
     network: { interfaces: [] },
-    process: { processes: [] },
     system: { hostname: "", kernel: "", uptimeSec: 0, osName: "", coreCount: 0 },
     ...overrides,
   }
@@ -75,7 +75,7 @@ function StateDisplay() {
       ))}
       {Object.entries(state.metrics).map(([id, m]) => (
         <span key={id} data-testid={`metrics-${id}-cpu`}>
-          {m.cpu.aggregate.usagePercent}
+          {m.aggregate?.usagePercent}
         </span>
       ))}
     </div>
@@ -139,7 +139,7 @@ describe("WebSocketProvider", () => {
             { id: "srv-1", name: "web-1", host: "10.0.0.1", status: "connected" },
           ],
           metrics: {
-            "srv-1": makeMetrics({ cpu: { aggregate: { usagePercent: 42.5 }, cores: [] } }),
+            "srv-1": makeMetrics({ aggregate: { usagePercent: 42.5 }, cores: [] }),
           },
         },
       })

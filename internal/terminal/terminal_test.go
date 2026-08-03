@@ -1,29 +1,31 @@
 package terminal_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"belochka/internal/pty"
 	"belochka/internal/terminal"
 
 	"github.com/gorilla/websocket"
 )
 
-// mockSession implements a fake SSH session using in-memory pipes.
+// mockSession implements pty.Session with in-memory pipes. The bridge
+// goroutines mutate `closed` and `windowChanges` concurrently with the test
+// reading them, so both are guarded by `mu`.
 type mockSession struct {
-	Stdin       io.ReadCloser
-	stdinWriter io.WriteCloser
-	Stdout      io.ReadCloser
-	stdoutWriter io.WriteCloser
-	ptyRequested bool
-	ptyTerm      string
-	ptyCols      uint32
-	ptyRows      uint32
-	closed       bool
+	stdinR        io.ReadCloser
+	stdinWriter   io.WriteCloser
+	stdoutR       io.ReadCloser
+	stdoutWriter  io.WriteCloser
+	mu            sync.Mutex
+	closed        bool
 	windowChanges []windowChange
 }
 
@@ -35,61 +37,37 @@ func newMockSession() *mockSession {
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
 	return &mockSession{
-		Stdin:        stdinR,
+		stdinR:       stdinR,
 		stdinWriter:  stdinW,
-		Stdout:       stdoutR,
+		stdoutR:      stdoutR,
 		stdoutWriter: stdoutW,
 	}
 }
 
-func (m *mockSession) RequestPTY(term string, rows, cols int) error {
-	m.ptyRequested = true
-	m.ptyTerm = term
-	m.ptyCols = uint32(cols)
-	m.ptyRows = uint32(rows)
-	return nil
-}
+func (m *mockSession) Stdin() io.WriteCloser { return m.stdinWriter }
 
-func (m *mockSession) WindowChange(rows, cols int) error {
+func (m *mockSession) Stdout() io.Reader { return m.stdoutR }
+
+func (m *mockSession) SetSize(rows, cols int) error {
+	m.mu.Lock()
 	m.windowChanges = append(m.windowChanges, windowChange{cols: cols, rows: rows})
+	m.mu.Unlock()
 	return nil
 }
 
-func (m *mockSession) StdinPipe() (io.WriteCloser, error) {
-	return m.stdinWriter, nil
-}
-
-func (m *mockSession) StdoutPipe() (io.Reader, error) {
-	return m.Stdout, nil
-}
-
-func (m *mockSession) Start(cmd string) error {
-	return nil
-}
-
-func (m *mockSession) Shell() error {
-	return nil
-}
-
-func (m *mockSession) Wait() error {
-	// Block until stdout is closed (simulating session end)
-	buf := make([]byte, 1)
-	for {
-		_, err := m.Stdout.Read(buf)
-		if err != nil {
-			return err
-		}
-	}
-}
+func (m *mockSession) Wait() (pty.ExitStatus, error) { return pty.ExitStatus{}, nil }
 
 func (m *mockSession) Close() error {
+	m.mu.Lock()
 	m.closed = true
+	m.mu.Unlock()
 	m.stdinWriter.Close()
 	m.stdoutWriter.Close()
 	return nil
 }
 
-// mockOpener implements terminal.SessionOpener.
+// mockOpener implements terminal.PTYOpener. Its open errors speak the
+// bridge's seam language: the handler maps ErrOpenSession to 502.
 type mockOpener struct {
 	sessions map[string]*mockSession
 }
@@ -98,10 +76,10 @@ func newMockOpener() *mockOpener {
 	return &mockOpener{sessions: make(map[string]*mockSession)}
 }
 
-func (o *mockOpener) OpenSession(serverID string) (terminal.Session, error) {
+func (o *mockOpener) OpenInteractive(serverID string, _, _ int) (pty.Session, error) {
 	s, ok := o.sessions[serverID]
 	if !ok {
-		return nil, &terminal.ServerNotFoundError{ServerID: serverID}
+		return nil, fmt.Errorf("%w: server not found: %s", pty.ErrOpenSession, serverID)
 	}
 	return s, nil
 }
@@ -158,13 +136,6 @@ func TestConnectSendsConnectedStatus(t *testing.T) {
 	if msg != expected {
 		t.Fatalf("expected %s, got %s", expected, msg)
 	}
-
-	if !ms.ptyRequested {
-		t.Fatal("PTY was not requested")
-	}
-	if ms.ptyTerm != "xterm-256color" {
-		t.Fatalf("expected term xterm-256color, got %s", ms.ptyTerm)
-	}
 }
 
 func TestClientInputWrittenToSSHStdin(t *testing.T) {
@@ -188,7 +159,7 @@ func TestClientInputWrittenToSSHStdin(t *testing.T) {
 	result := make(chan string, 1)
 	go func() {
 		buf := make([]byte, 64)
-		n, _ := ms.Stdin.Read(buf)
+		n, _ := ms.stdinR.Read(buf)
 		result <- string(buf[:n])
 	}()
 
@@ -222,10 +193,13 @@ func TestResizeMessageTriggersWindowChange(t *testing.T) {
 	// Give the handler time to process
 	time.Sleep(50 * time.Millisecond)
 
-	if len(ms.windowChanges) != 1 {
-		t.Fatalf("expected 1 window change, got %d", len(ms.windowChanges))
+	ms.mu.Lock()
+	changes := append([]windowChange(nil), ms.windowChanges...)
+	ms.mu.Unlock()
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 window change, got %d", len(changes))
 	}
-	wc := ms.windowChanges[0]
+	wc := changes[0]
 	if wc.cols != 120 || wc.rows != 40 {
 		t.Fatalf("expected 120x40, got %dx%d", wc.cols, wc.rows)
 	}
@@ -270,7 +244,10 @@ func TestWebSocketCloseClosesSSHSession(t *testing.T) {
 	// Wait for cleanup
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if ms.closed {
+		ms.mu.Lock()
+		closed := ms.closed
+		ms.mu.Unlock()
+		if closed {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

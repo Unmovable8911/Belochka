@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest"
 
 describe("i18n initialization", () => {
-  it("loads all four languages", async () => {
+  it("loads all nine languages", async () => {
     const i18n = (await import("../i18n")).default
     const languages = Object.keys(i18n.options.resources ?? {})
-    expect(languages).toEqual(expect.arrayContaining(["en", "zh", "fr", "ru"]))
-    expect(languages).toHaveLength(4)
+    expect(languages).toEqual(
+      expect.arrayContaining(["en", "zh", "fr", "ru", "de", "es", "pt", "zh-TW", "it"]),
+    )
+    expect(languages).toHaveLength(9)
   })
 
   it("falls back to en for unsupported language", async () => {

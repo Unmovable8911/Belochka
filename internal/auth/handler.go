@@ -1,10 +1,11 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+
+	"belochka/internal/httpx"
 )
 
 // Handler holds HTTP handlers for authentication endpoints.
@@ -18,6 +19,7 @@ func NewHandler(store *SessionStore) *Handler {
 }
 
 type setupRequest struct {
+	Language        string `json:"language"`
 	Password        string `json:"password"`
 	ConfirmPassword string `json:"confirm_password"`
 }
@@ -40,27 +42,27 @@ type authStatusResponse struct {
 // HandleSetup processes POST /api/setup. Only works when no password is set.
 func (h *Handler) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if !h.store.NeedsSetup() {
-		writeJSON(w, http.StatusForbidden, errBody("already_setup", "Password is already set"))
+		httpx.WriteError(w, http.StatusForbidden, "already_setup", "Password is already set")
 		return
 	}
 
 	var req setupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid_json", "Request body is not valid JSON"))
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
 		return
 	}
 
-	if err := h.store.SetupPassword(req.Password, req.ConfirmPassword); err != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid_input", err.Error()))
+	if err := h.store.SetupPassword(req.Language, req.Password, req.ConfirmPassword); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
 
 	if _, err := h.store.CreateSession(w); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody("internal_error", "Failed to create session"))
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create session")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // HandleLogin processes POST /api/login.
@@ -68,49 +70,49 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 
 	if err := h.store.CheckRateLimit(ip); err != nil {
-		writeJSON(w, http.StatusTooManyRequests, errBody("rate_limited", err.Error()))
+		httpx.WriteError(w, http.StatusTooManyRequests, "rate_limited", err.Error())
 		return
 	}
 
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid_json", "Request body is not valid JSON"))
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
 		return
 	}
 
 	if h.store.NeedsSetup() {
-		writeJSON(w, http.StatusBadRequest, errBody("setup_required", "No password is set. Visit /setup first."))
+		httpx.WriteError(w, http.StatusBadRequest, "setup_required", "No password is set. Visit /setup first.")
 		return
 	}
 
 	if !VerifyPassword(h.store.passwordStore.PasswordHash(), req.Password) {
 		if remaining := h.store.RecordFailedAttempt(ip); remaining > 0 {
-			writeJSON(w, http.StatusTooManyRequests, errBody("rate_limited", "Too many failed attempts; try again later"))
+			httpx.WriteError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed attempts; try again later")
 			return
 		}
-		writeJSON(w, http.StatusUnauthorized, errBody("invalid_password", "Invalid password"))
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_password", "Invalid password")
 		return
 	}
 
 	h.store.ClearRateLimit(ip)
 
 	if _, err := h.store.CreateSession(w); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody("internal_error", "Failed to create session"))
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create session")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // HandleLogout processes POST /api/logout.
 func (h *Handler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	h.store.DeleteSession(w, r)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // HandleAuthStatus processes GET /api/auth/status.
 func (h *Handler) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, authStatusResponse{
+	httpx.WriteJSON(w, http.StatusOK, authStatusResponse{
 		NeedsSetup:    h.store.NeedsSetup(),
 		Authenticated: h.store.ValidateSession(r),
 	})
@@ -119,8 +121,8 @@ func (h *Handler) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
 // HandleChangePassword processes POST /api/change-password.
 func (h *Handler) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 	var req changePasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid_json", "Request body is not valid JSON"))
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
 		return
 	}
 
@@ -134,17 +136,17 @@ func (h *Handler) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrPasswordTooShort):
 			code = "password_too_short"
 		}
-		writeJSON(w, http.StatusBadRequest, errBody(code, err.Error()))
+		httpx.WriteError(w, http.StatusBadRequest, code, err.Error())
 		return
 	}
 
 	// Create a new session so the user stays logged in after changing password.
 	if _, err := h.store.CreateSession(w); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody("internal_error", "Failed to create session"))
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create session")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // clientIP extracts the client IP from the request, respecting X-Forwarded-For.
@@ -160,21 +162,3 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-type errorResponse struct {
-	Error errorDetail `json:"error"`
-}
-
-type errorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func errBody(code, message string) errorResponse {
-	return errorResponse{Error: errorDetail{Code: code, Message: message}}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}

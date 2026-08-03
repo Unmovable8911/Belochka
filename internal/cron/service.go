@@ -6,15 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"belochka/internal/ssh"
 )
 
 // ErrCronIndexOutOfRange is returned when a cron entry index does not exist.
 var ErrCronIndexOutOfRange = errors.New("cron entry index out of range")
-
-// Executor runs shell commands on a remote server.
-type Executor interface {
-	Execute(ctx context.Context, serverID, cmd string) (string, error)
-}
 
 // Runner executes a command and returns combined stdout+stderr output and the
 // exit code. Unlike Executor, a non-zero exit code is not an error.
@@ -24,12 +21,12 @@ type Runner interface {
 
 // Service orchestrates reading and writing crontabs on remote servers.
 type Service struct {
-	executor Executor
+	executor ssh.Executor
 	runner   Runner
 }
 
 // NewService creates a Service backed by the given executor and runner.
-func NewService(executor Executor, runner Runner) *Service {
+func NewService(executor ssh.Executor, runner Runner) *Service {
 	return &Service{executor: executor, runner: runner}
 }
 

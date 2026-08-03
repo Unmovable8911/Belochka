@@ -6,8 +6,17 @@ import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import type { Server } from "@/types/server"
 import { getServer } from "@/api/client"
+import { Button } from "@/components/ui/button"
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected"
+
+function getTerminalTheme(): { background: string; foreground: string } {
+  const style = getComputedStyle(document.documentElement)
+  return {
+    background: style.getPropertyValue("--background").trim() || "#0d1117",
+    foreground: style.getPropertyValue("--foreground").trim() || "#fafafa",
+  }
+}
 
 export default function Console() {
   const { t } = useTranslation()
@@ -39,10 +48,7 @@ export default function Console() {
       cursorBlink: true,
       fontFamily: "monospace",
       fontSize: 14,
-      theme: {
-        background: "#09090b",
-        foreground: "#fafafa",
-      },
+      theme: getTerminalTheme(),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -120,14 +126,14 @@ export default function Console() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#09090b]">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-950">
-        <div className="flex items-center gap-4 text-sm text-zinc-400">
+    <div className="flex flex-col h-screen bg-background">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
           {server && (
             <>
-              <span className="text-zinc-200 font-medium">{server.name}</span>
+              <span className="text-foreground font-medium">{server.name}</span>
               <span>{server.host}:{server.port}</span>
-              <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
                 {server.auth_type === "password" ? t("console.authPassword") : t("console.authKey")}
               </span>
             </>
@@ -136,10 +142,10 @@ export default function Console() {
         <div className="flex items-center gap-2">
           <span className={`inline-block w-2 h-2 rounded-full ${
             status === "connected" ? "bg-green-500" :
-            status === "connecting" ? "bg-yellow-500 animate-pulse" :
+            status === "connecting" ? "bg-amber-500 animate-pulse" :
             "bg-red-500"
           }`} />
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-muted-foreground">
             {status === "connected" && t("console.statusConnected")}
             {status === "connecting" && t("console.statusConnecting")}
             {status === "disconnected" && t("console.statusDisconnected")}
@@ -151,15 +157,15 @@ export default function Console() {
         <div ref={termRef} className="h-full w-full" />
 
         {status === "disconnected" && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/70">
             <div className="text-center">
-              <p className="text-zinc-300 mb-4">{t("console.disconnectedMessage")}</p>
-              <button
+              <p className="text-muted-foreground mb-4">{t("console.disconnectedMessage")}</p>
+              <Button
                 onClick={handleReconnect}
-                className="px-4 py-2 bg-zinc-200 text-zinc-900 rounded-md text-sm font-medium hover:bg-zinc-300 transition-colors cursor-pointer"
+                variant="default"
               >
                 {t("console.reconnect")}
-              </button>
+              </Button>
             </div>
           </div>
         )}

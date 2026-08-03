@@ -24,14 +24,11 @@ function makeServer(overrides: Partial<{ id: string; name: string; host: string;
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
-    cpu: overrides.cpu ?? {
-      aggregate: { usagePercent: 45.2 },
-      cores: [],
-    },
+    aggregate: overrides.aggregate ?? { usagePercent: 45.2 },
+    cores: overrides.cores ?? [],
     memory: overrides.memory ?? {
       total: 8 * 1024 * 1024 * 1024,
       used: 4 * 1024 * 1024 * 1024,
-      available: 4 * 1024 * 1024 * 1024,
       swapTotal: 0,
       swapUsed: 0,
     },
@@ -42,7 +39,6 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
           mountPoint: "/",
           total: 100 * 1024 * 1024 * 1024,
           used: 60 * 1024 * 1024 * 1024,
-          available: 40 * 1024 * 1024 * 1024,
         },
       ],
     },
@@ -51,7 +47,6 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
         { name: "eth0", rxBytesPerSec: 1500000, txBytesPerSec: 500000 },
       ],
     },
-    process: overrides.process ?? { processes: [] },
     system: overrides.system ?? {
       hostname: "web-01",
       kernel: "5.15.0",
@@ -118,7 +113,8 @@ describe("Dashboard Server Cards", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 72.5 }, cores: [] },
+          aggregate: { usagePercent: 72.5 },
+          cores: [],
         }),
       },
     }
@@ -142,7 +138,6 @@ describe("Dashboard Server Cards", () => {
           memory: {
             total: 16 * 1024 * 1024 * 1024,
             used: 12 * 1024 * 1024 * 1024,
-            available: 4 * 1024 * 1024 * 1024,
             swapTotal: 0,
             swapUsed: 0,
           },
@@ -160,7 +155,7 @@ describe("Dashboard Server Cards", () => {
 
   // --- Slice 4: Disk — highest-usage partition ---
 
-  it("shows the highest-usage disk partition with mount point", () => {
+  it("shows disk usage from root partition", () => {
     const state: MonitorState = {
       ...initialMonitorState,
       servers: [makeServer({ id: "srv-1" })],
@@ -173,14 +168,12 @@ describe("Dashboard Server Cards", () => {
                 mountPoint: "/",
                 total: 100 * 1024 * 1024 * 1024,
                 used: 30 * 1024 * 1024 * 1024,
-                available: 70 * 1024 * 1024 * 1024,
               },
               {
                 filesystem: "/dev/sdb1",
                 mountPoint: "/data",
                 total: 200 * 1024 * 1024 * 1024,
                 used: 180 * 1024 * 1024 * 1024,
-                available: 20 * 1024 * 1024 * 1024,
               },
             ],
           },
@@ -189,9 +182,9 @@ describe("Dashboard Server Cards", () => {
     }
     renderDashboard(state)
 
-    // /data has 90% usage (highest), should be displayed
-    expect(screen.getByText(/\/data/)).toBeInTheDocument()
-    expect(screen.getByText("90.0%")).toBeInTheDocument()
+    // ServerCard shows root partition usage (30%). The label is the i18n key "Disk".
+    expect(screen.getByText("Disk")).toBeInTheDocument()
+    expect(screen.getByText("30.0%")).toBeInTheDocument()
     const diskBar = screen.getByRole("progressbar", { name: /disk/i })
     expect(diskBar).toBeInTheDocument()
   })
@@ -244,7 +237,8 @@ describe("Dashboard Server Cards", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 25 }, cores: [] },
+          aggregate: { usagePercent: 25 },
+          cores: [],
         }),
       },
     }
@@ -260,7 +254,8 @@ describe("Dashboard Server Cards", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 65 }, cores: [] },
+          aggregate: { usagePercent: 65 },
+          cores: [],
         }),
       },
     }
@@ -276,7 +271,8 @@ describe("Dashboard Server Cards", () => {
       servers: [makeServer({ id: "srv-1" })],
       metrics: {
         "srv-1": makeMetrics({
-          cpu: { aggregate: { usagePercent: 90 }, cores: [] },
+          aggregate: { usagePercent: 90 },
+          cores: [],
         }),
       },
     }

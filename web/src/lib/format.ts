@@ -47,7 +47,22 @@ export function formatUptime(seconds: number): string {
   return `${minutes}m`
 }
 
-export type UsageColor = 'green' | 'yellow' | 'red'
+export function formatRunDuration(startedAt?: string, finishedAt?: string): string {
+  if (!startedAt || !finishedAt) return ''
+  const start = new Date(startedAt).getTime()
+  const end = new Date(finishedAt).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return ''
+
+  const totalSeconds = (end - start) / 1000
+  if (totalSeconds < 60) return `${Math.round(totalSeconds)}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.round(totalSeconds % 60)
+  if (minutes < 60) return `${minutes}m ${seconds}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
+type UsageColor = 'green' | 'yellow' | 'red'
 
 export function getUsageColor(percent: number): UsageColor {
   if (!Number.isFinite(percent) || percent < 60) return 'green'

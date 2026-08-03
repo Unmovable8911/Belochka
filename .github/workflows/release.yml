@@ -23,8 +23,12 @@ jobs:
 
       - name: Build frontend
         working-directory: web
+        # npm ci is a strict lock-sync check; it fails when the runner's npm
+        # resolves a slightly different ideal tree than the committed lock
+        # (e.g. stale @emnapi/* wasm fallbacks). npm install reconciles the
+        # lock in place and proceeds.
         run: |
-          npm ci
+          npm install
           npx tsc -b
           npx vite build
 
@@ -103,23 +107,11 @@ jobs:
         run: cd bin && sha256sum * > checksums.txt
 
       # Releases are cut from direct pushes to main (no PRs), so GitHub's
-      # auto-generated PR notes are empty. Build the body from the commit log
-      # between the previous tag and this one instead.
+      # auto-generated PR notes are empty. Use the commit the tag points to
+      # as the release body.
       - name: Generate changelog
         run: |
-          tag="${{ github.ref_name }}"
-          prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
-          {
-            echo "## Changes"
-            echo
-            if [ -n "$prev" ]; then
-              git log --no-merges --pretty='- %B' "${prev}..${tag}"
-              echo
-              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${prev}...${tag}"
-            else
-              git log --no-merges --pretty='- %s' "${tag}"
-            fi
-          } > CHANGELOG_RELEASE.md
+          git log -1 --format='%B' "${{ github.ref_name }}" > CHANGELOG_RELEASE.md
 
       - name: Create release
         uses: softprops/action-gh-release@v2

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
+	"belochka/internal/httpx"
 	"belochka/internal/model"
 	"belochka/internal/ssh"
 
@@ -18,14 +20,13 @@ type ServerStore interface {
 	Create(ctx context.Context, srv model.Server) (model.Server, error)
 	GetByID(ctx context.Context, id string) (model.Server, error)
 	List(ctx context.Context) ([]model.Server, error)
+	ListByGroup(ctx context.Context, groupID *string) ([]model.Server, error)
 	Update(ctx context.Context, srv model.Server) (model.Server, error)
 	Delete(ctx context.Context, id string) error
 }
 
 // SSHTester tests SSH connectivity to a server.
-type SSHTester interface {
-	TestConnection(srv model.Server) (ssh.TestResult, error)
-}
+type SSHTester func(srv model.Server) (ssh.TestResult, error)
 
 // Reconnecter triggers a reconnection for a server and returns its status.
 type Reconnecter interface {
@@ -46,16 +47,6 @@ func (h *serverHandler) notifyChange() {
 	}
 }
 
-// errorBody is the unified error response format.
-type errorBody struct {
-	Error errorDetail `json:"error"`
-}
-
-type errorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
 // serverResponse is a Server without the Password field, used for JSON responses.
 type serverResponse struct {
 	ID                 string          `json:"id"`
@@ -64,13 +55,12 @@ type serverResponse struct {
 	Port               int             `json:"port"`
 	AuthType           model.AuthType  `json:"auth_type"`
 	Username           string          `json:"username"`
+	GroupID            *string         `json:"group_id,omitempty"`
 	KeyPath            string          `json:"key_path,omitempty"`
 	HostKeyFingerprint string          `json:"host_key_fingerprint,omitempty"`
 	CreatedAt          string          `json:"created_at"`
 	UpdatedAt          string          `json:"updated_at"`
 }
-
-const timeFormat = "2006-01-02T15:04:05Z"
 
 func toServerResponse(srv model.Server) serverResponse {
 	return serverResponse{
@@ -80,6 +70,7 @@ func toServerResponse(srv model.Server) serverResponse {
 		Port:               srv.Port,
 		AuthType:           srv.AuthType,
 		Username:           srv.Username,
+		GroupID:            srv.GroupID,
 		KeyPath:            srv.KeyPath,
 		HostKeyFingerprint: srv.HostKeyFingerprint,
 		CreatedAt:          srv.CreatedAt.Format(timeFormat),
@@ -87,44 +78,41 @@ func toServerResponse(srv model.Server) serverResponse {
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorBody{
-		Error: errorDetail{Code: code, Message: message},
-	})
-}
-
 func (h *serverHandler) create(w http.ResponseWriter, r *http.Request) {
 	var srv model.Server
-	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
+	if err := httpx.DecodeJSON(r, &srv); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
 		return
 	}
 
-	if problems := validateServer(srv); len(problems) > 0 {
-		writeError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
+	if problems := srv.Validate(); len(problems) > 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
 		return
 	}
 
 	created, err := h.store.Create(r.Context(), srv)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to create server")
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to create server")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, toServerResponse(created))
+	httpx.WriteJSON(w, http.StatusCreated, toServerResponse(created))
 	h.notifyChange()
 }
 
 func (h *serverHandler) list(w http.ResponseWriter, r *http.Request) {
-	servers, err := h.store.List(r.Context())
+	var servers []model.Server
+	var err error
+
+	groupIDStr := r.URL.Query().Get("group_id")
+	if groupIDStr != "" {
+		servers, err = h.store.ListByGroup(r.Context(), &groupIDStr)
+	} else {
+		servers, err = h.store.List(r.Context())
+	}
+
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to list servers")
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to list servers")
 		return
 	}
 
@@ -133,7 +121,7 @@ func (h *serverHandler) list(w http.ResponseWriter, r *http.Request) {
 		resp[i] = toServerResponse(srv)
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *serverHandler) getByID(w http.ResponseWriter, r *http.Request) {
@@ -142,43 +130,68 @@ func (h *serverHandler) getByID(w http.ResponseWriter, r *http.Request) {
 	srv, err := h.store.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, model.ErrServerNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Server not found")
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toServerResponse(srv))
+	httpx.WriteJSON(w, http.StatusOK, toServerResponse(srv))
 }
 
 func (h *serverHandler) update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	var srv model.Server
-	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
-		return
-	}
-
-	srv.ID = id
-
-	if problems := validateServer(srv); len(problems) > 0 {
-		writeError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
-		return
-	}
-
-	updated, err := h.store.Update(r.Context(), srv)
+	existing, err := h.store.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, model.ErrServerNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Server not found")
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to update server")
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toServerResponse(updated))
+	// Decode into a map first to detect which keys are present (for GroupID
+	// null-vs-absent disambiguation), then decode into the Server struct for
+	// typed field access.
+	bodyBytes, err := readBody(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
+		return
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
+		return
+	}
+
+	var srv model.Server
+	if err := json.Unmarshal(bodyBytes, &srv); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
+		return
+	}
+
+	mergeServerFields(&existing, srv, raw)
+
+	if problems := existing.Validate(); len(problems) > 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
+		return
+	}
+
+	updated, err := h.store.Update(r.Context(), existing)
+	if err != nil {
+		if errors.Is(err, model.ErrServerNotFound) {
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "Server not found")
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to update server")
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toServerResponse(updated))
 	h.notifyChange()
 }
 
@@ -187,10 +200,10 @@ func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.store.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, model.ErrServerNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Server not found")
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to delete server")
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to delete server")
 		return
 	}
 
@@ -200,13 +213,13 @@ func (h *serverHandler) delete(w http.ResponseWriter, r *http.Request) {
 
 func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
 	var srv model.Server
-	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
+	if err := httpx.DecodeJSON(r, &srv); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Request body is not valid JSON")
 		return
 	}
 
-	if problems := validateServer(srv); len(problems) > 0 {
-		writeError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
+	if problems := srv.Validate(); len(problems) > 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", strings.Join(problems, "; "))
 		return
 	}
 
@@ -218,18 +231,18 @@ func (h *serverHandler) testConnection(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.tester.TestConnection(srv)
+	result, err := h.tester(srv)
 	if err != nil {
 		var connErr *ssh.ConnectionError
 		if errors.As(err, &connErr) {
-			writeError(w, http.StatusUnprocessableEntity, string(connErr.Kind), connErr.Message)
+			httpx.WriteError(w, http.StatusUnprocessableEntity, string(connErr.Kind), connErr.Message)
 			return
 		}
-		writeError(w, http.StatusUnprocessableEntity, "connection_failed", err.Error())
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "connection_failed", err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	httpx.WriteJSON(w, http.StatusOK, result)
 }
 
 func (h *serverHandler) reconnect(w http.ResponseWriter, r *http.Request) {
@@ -239,27 +252,52 @@ func (h *serverHandler) reconnect(w http.ResponseWriter, r *http.Request) {
 	_, err := h.store.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, model.ErrServerNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Server not found")
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "Server not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
+		httpx.WriteError(w, http.StatusInternalServerError, "store_error", "Failed to get server")
 		return
 	}
 
 	status := h.reconnecter.Reconnect(r.Context(), id)
-	writeJSON(w, http.StatusOK, status)
+	httpx.WriteJSON(w, http.StatusOK, status)
 }
 
-func validateServer(srv model.Server) []string {
-	var problems []string
-	if strings.TrimSpace(srv.Name) == "" {
-		problems = append(problems, "name is required")
+
+// mergeServerFields applies fields from srv to existing only for keys
+// present in the request body (raw).
+func mergeServerFields(existing *model.Server, srv model.Server, raw map[string]json.RawMessage) {
+	if _, ok := raw["name"]; ok {
+		existing.Name = srv.Name
 	}
-	if strings.TrimSpace(srv.Host) == "" {
-		problems = append(problems, "host is required")
+	if _, ok := raw["host"]; ok {
+		existing.Host = srv.Host
 	}
-	if strings.TrimSpace(srv.Username) == "" {
-		problems = append(problems, "username is required")
+	if _, ok := raw["port"]; ok {
+		existing.Port = srv.Port
 	}
-	return problems
+	if _, ok := raw["username"]; ok {
+		existing.Username = srv.Username
+	}
+	if _, ok := raw["auth_type"]; ok {
+		existing.AuthType = srv.AuthType
+	}
+	if _, ok := raw["group_id"]; ok {
+		existing.GroupID = srv.GroupID
+	}
+	// Password, KeyPath, and HostKeyFingerprint are optional; empty means "no change".
+	if srv.Password != "" {
+		existing.Password = srv.Password
+	}
+	if srv.KeyPath != "" {
+		existing.KeyPath = srv.KeyPath
+	}
+	if srv.HostKeyFingerprint != "" {
+		existing.HostKeyFingerprint = srv.HostKeyFingerprint
+	}
+}
+
+// readBody reads and returns the full request body.
+func readBody(r *http.Request) ([]byte, error) {
+	return io.ReadAll(r.Body)
 }

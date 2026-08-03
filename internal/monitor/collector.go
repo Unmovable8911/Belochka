@@ -8,12 +8,8 @@ import (
 
 	"belochka/internal/clock"
 	"belochka/internal/model"
+	"belochka/internal/ssh"
 )
-
-// SSHExecutor abstracts SSH command execution for testability.
-type SSHExecutor interface {
-	Execute(ctx context.Context, serverID, cmd string) (string, error)
-}
 
 // CollectorOptions configures a Collector.
 type CollectorOptions struct {
@@ -34,7 +30,7 @@ func (o CollectorOptions) withDefaults() CollectorOptions {
 // Collector runs a metrics collection loop for a single server.
 type Collector struct {
 	serverID string
-	executor SSHExecutor
+	executor ssh.Executor
 	opts     CollectorOptions
 	clock    clock.Clock
 
@@ -52,7 +48,7 @@ type Collector struct {
 }
 
 // NewCollector creates a new Collector for the given server.
-func NewCollector(serverID string, executor SSHExecutor, opts CollectorOptions, clk clock.Clock) *Collector {
+func NewCollector(serverID string, executor ssh.Executor, opts CollectorOptions, clk clock.Clock) *Collector {
 	return &Collector{
 		serverID: serverID,
 		executor: executor,
@@ -144,7 +140,6 @@ func (c *Collector) collect(ctx context.Context) {
 			ServerID:    c.serverID,
 			Memory:      metrics.Memory,
 			Disk:        metrics.Disk,
-			Process:     metrics.Process,
 			System:      metrics.System,
 			CollectedAt: now,
 			Partial:     true,
@@ -171,8 +166,7 @@ func (c *Collector) collect(ctx context.Context) {
 			Cores:        cpuUsages[1:],
 			Memory:       metrics.Memory,
 			Disk:         metrics.Disk,
-			Network:      netRates,
-			Process:      metrics.Process,
+			Network:      model.NetworkRateList{Interfaces: netRates},
 			System:       metrics.System,
 			CollectedAt:  now,
 			Partial:      false,
@@ -198,7 +192,7 @@ type managedCollector struct {
 
 // Manager manages collectors for multiple servers.
 type Manager struct {
-	executor SSHExecutor
+	executor ssh.Executor
 	opts     CollectorOptions
 	clock    clock.Clock
 
@@ -208,7 +202,7 @@ type Manager struct {
 }
 
 // NewManager creates a new Manager.
-func NewManager(executor SSHExecutor, opts CollectorOptions, clk clock.Clock) *Manager {
+func NewManager(executor ssh.Executor, opts CollectorOptions, clk clock.Clock) *Manager {
 	return &Manager{
 		executor:   executor,
 		opts:       opts,

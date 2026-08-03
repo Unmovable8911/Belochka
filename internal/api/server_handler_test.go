@@ -49,6 +49,19 @@ func (m *mockStore) List(_ context.Context) ([]model.Server, error) {
 	return result, nil
 }
 
+func (m *mockStore) ListByGroup(_ context.Context, groupID *string) ([]model.Server, error) {
+	if groupID == nil {
+		return m.List(nil)
+	}
+	var result []model.Server
+	for _, srv := range m.servers {
+		if srv.GroupID != nil && *srv.GroupID == *groupID {
+			result = append(result, srv)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockStore) Update(_ context.Context, srv model.Server) (model.Server, error) {
 	existing, ok := m.servers[srv.ID]
 	if !ok {
@@ -70,16 +83,15 @@ func (m *mockStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-// mockSSHTester implements api.SSHTester for testing.
-type mockSSHTester struct {
-	result ssh.TestResult
-	err    error
-	gotSrv model.Server // captures the last server passed to TestConnection
-}
-
-func (m *mockSSHTester) TestConnection(srv model.Server) (ssh.TestResult, error) {
-	m.gotSrv = srv
-	return m.result, m.err
+// newMockTester returns an SSHTester that responds with the given result/error.
+// The gotSrv pointer captures the last server passed to the tester (nil if capture is not needed).
+func newMockTester(result ssh.TestResult, err error, gotSrv *model.Server) api.SSHTester {
+	return func(srv model.Server) (ssh.TestResult, error) {
+		if gotSrv != nil {
+			*gotSrv = srv
+		}
+		return result, err
+	}
 }
 
 func setupRouter(store api.ServerStore) http.Handler {
@@ -100,7 +112,7 @@ func TestListServers_ReturnsAllWithoutPasswords(t *testing.T) {
 	for _, name := range []string{"web-1", "web-2"} {
 		body, _ := json.Marshal(map[string]interface{}{
 			"name": name, "host": "10.0.0.1", "port": 22,
-			"username": "deploy", "password": "secret",
+			"username": "deploy", "auth_type": "password", "password": "secret",
 		})
 		req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -143,7 +155,7 @@ func TestGetServer_ReturnsServerWithoutPassword(t *testing.T) {
 	// Create a server
 	body, _ := json.Marshal(map[string]interface{}{
 		"name": "db-1", "host": "10.0.0.5", "port": 22,
-		"username": "admin", "password": "dbpass",
+		"username": "admin", "auth_type": "password", "password": "dbpass",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -205,7 +217,7 @@ func TestUpdateServer_UpdatesFieldsAndKeepsPassword(t *testing.T) {
 	// Create a server with a password
 	body, _ := json.Marshal(map[string]interface{}{
 		"name": "old-name", "host": "10.0.0.1", "port": 22,
-		"username": "deploy", "password": "original-pass",
+		"username": "deploy", "auth_type": "password", "password": "original-pass",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -267,7 +279,7 @@ func TestDeleteServer_RemovesServer(t *testing.T) {
 
 	// Create a server
 	body, _ := json.Marshal(map[string]interface{}{
-		"name": "temp", "host": "10.0.0.1", "port": 22, "username": "user",
+		"name": "temp", "host": "10.0.0.1", "port": 22, "username": "user", "auth_type": "password",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -357,7 +369,7 @@ func TestUpdateServer_ValidationErrors(t *testing.T) {
 
 	// Create a server first
 	body, _ := json.Marshal(map[string]interface{}{
-		"name": "ok", "host": "10.0.0.1", "port": 22, "username": "user",
+		"name": "ok", "host": "10.0.0.1", "port": 22, "username": "user", "auth_type": "password",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -368,7 +380,7 @@ func TestUpdateServer_ValidationErrors(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&created)
 	id := created["id"].(string)
 
-	// Try to update with missing name
+	// Partial update (omitting name) should succeed — merge keeps existing name.
 	updateBody, _ := json.Marshal(map[string]interface{}{
 		"host": "10.0.0.2", "username": "user",
 	})
@@ -377,8 +389,21 @@ func TestUpdateServer_ValidationErrors(t *testing.T) {
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for partial update (omitted name), got %d", rec.Code)
+	}
+
+	// Explicitly setting name to empty string should still fail validation.
+	badBody, _ := json.Marshal(map[string]interface{}{
+		"name": "", "host": "10.0.0.2", "username": "user",
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/servers/"+id, bytes.NewReader(badBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
+		t.Fatalf("expected 400 for empty name, got %d", rec.Code)
 	}
 }
 
@@ -412,11 +437,12 @@ func TestCreateServer_ReturnsCreatedWithoutPassword(t *testing.T) {
 	router := setupRouter(store)
 
 	body := map[string]interface{}{
-		"name":     "prod-web-1",
-		"host":     "192.168.1.10",
-		"port":     22,
-		"username": "deploy",
-		"password": "secret123",
+		"name":      "prod-web-1",
+		"host":      "192.168.1.10",
+		"port":      22,
+		"username":  "deploy",
+		"auth_type": "password",
+		"password":  "secret123",
 	}
 	jsonBody, _ := json.Marshal(body)
 
@@ -469,7 +495,7 @@ func validTestBody() map[string]interface{} {
 }
 
 func TestTestServer_Success_ReturnsFingerprint(t *testing.T) {
-	tester := &mockSSHTester{result: ssh.TestResult{Fingerprint: "SHA256:abc123"}}
+	tester := newMockTester(ssh.TestResult{Fingerprint: "SHA256:abc123"}, nil, nil)
 	router := setupRouterWithSSH(newMockStore(), tester)
 
 	rec := postTestConnection(router, validTestBody())
@@ -487,7 +513,7 @@ func TestTestServer_Success_ReturnsFingerprint(t *testing.T) {
 }
 
 func TestTestServer_ValidationError_Returns400(t *testing.T) {
-	tester := &mockSSHTester{}
+	tester := newMockTester(ssh.TestResult{}, nil, nil)
 	router := setupRouterWithSSH(newMockStore(), tester)
 
 	rec := postTestConnection(router, map[string]interface{}{"port": 22})
@@ -511,7 +537,8 @@ func TestTestServer_ReusesStoredPasswordWhenOmitted(t *testing.T) {
 		ID: "srv-1", Name: "web-1", Host: "10.0.0.1", Port: 22,
 		Username: "deploy", AuthType: model.AuthTypePassword, Password: "stored-secret",
 	}
-	tester := &mockSSHTester{result: ssh.TestResult{Fingerprint: "SHA256:fp"}}
+	var gotSrv model.Server
+	tester := newMockTester(ssh.TestResult{Fingerprint: "SHA256:fp"}, nil, &gotSrv)
 	router := setupRouterWithSSH(store, tester)
 
 	// Changed host, password omitted.
@@ -523,8 +550,8 @@ func TestTestServer_ReusesStoredPasswordWhenOmitted(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if tester.gotSrv.Password != "stored-secret" {
-		t.Fatalf("expected stored password to be reused, got %q", tester.gotSrv.Password)
+	if gotSrv.Password != "stored-secret" {
+		t.Fatalf("expected stored password to be reused, got %q", gotSrv.Password)
 	}
 }
 
@@ -644,12 +671,10 @@ func TestReconnect_idempotentForNonFailedServer(t *testing.T) {
 }
 
 func TestTestServer_AuthFailure_Returns422(t *testing.T) {
-	tester := &mockSSHTester{
-		err: &ssh.ConnectionError{
-			Kind:    ssh.ErrAuth,
-			Message: "authentication failed",
-		},
-	}
+	tester := newMockTester(ssh.TestResult{}, &ssh.ConnectionError{
+		Kind:    ssh.ErrAuth,
+		Message: "authentication failed",
+	}, nil)
 	router := setupRouterWithSSH(newMockStore(), tester)
 
 	rec := postTestConnection(router, validTestBody())
@@ -668,12 +693,10 @@ func TestTestServer_AuthFailure_Returns422(t *testing.T) {
 }
 
 func TestTestServer_HostKeyMismatch_Returns422(t *testing.T) {
-	tester := &mockSSHTester{
-		err: &ssh.ConnectionError{
-			Kind:    ssh.ErrHostKey,
-			Message: "host key mismatch",
-		},
-	}
+	tester := newMockTester(ssh.TestResult{}, &ssh.ConnectionError{
+		Kind:    ssh.ErrHostKey,
+		Message: "host key mismatch",
+	}, nil)
 	router := setupRouterWithSSH(newMockStore(), tester)
 
 	rec := postTestConnection(router, validTestBody())
@@ -692,12 +715,10 @@ func TestTestServer_HostKeyMismatch_Returns422(t *testing.T) {
 }
 
 func TestTestServer_NetworkError_Returns422(t *testing.T) {
-	tester := &mockSSHTester{
-		err: &ssh.ConnectionError{
-			Kind:    ssh.ErrNetwork,
-			Message: "connection refused",
-		},
-	}
+	tester := newMockTester(ssh.TestResult{}, &ssh.ConnectionError{
+		Kind:    ssh.ErrNetwork,
+		Message: "connection refused",
+	}, nil)
 	router := setupRouterWithSSH(newMockStore(), tester)
 
 	rec := postTestConnection(router, validTestBody())
@@ -716,12 +737,10 @@ func TestTestServer_NetworkError_Returns422(t *testing.T) {
 }
 
 func TestTestServer_PassphraseKey_Returns422(t *testing.T) {
-	tester := &mockSSHTester{
-		err: &ssh.ConnectionError{
-			Kind:    ssh.ErrPassphrase,
-			Message: "key file is passphrase-protected; passphrase-protected keys are not supported",
-		},
-	}
+	tester := newMockTester(ssh.TestResult{}, &ssh.ConnectionError{
+		Kind:    ssh.ErrPassphrase,
+		Message: "key file is passphrase-protected; passphrase-protected keys are not supported",
+	}, nil)
 	router := setupRouterWithSSH(newMockStore(), tester)
 
 	rec := postTestConnection(router, validTestBody())

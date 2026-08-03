@@ -12,6 +12,8 @@ import (
 
 	"belochka/internal/clock"
 
+	"belochka/internal/config"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -30,12 +32,6 @@ const (
 	minPasswordLength = 6
 )
 
-// PasswordStore is the minimal config interface needed for auth.
-type PasswordStore interface {
-	PasswordHash() string
-	SetPasswordHash(hash string) error
-}
-
 type session struct {
 	id        string
 	createdAt time.Time
@@ -52,13 +48,13 @@ type rateLimitState struct {
 type SessionStore struct {
 	mu            sync.RWMutex
 	sessions      map[string]*session
-	passwordStore PasswordStore
+	passwordStore config.ConfigStore
 	rateLimits    map[string]*rateLimitState
 	clock         clock.Clock
 }
 
 // NewSessionStore creates a new SessionStore.
-func NewSessionStore(ps PasswordStore, c clock.Clock) *SessionStore {
+func NewSessionStore(ps config.ConfigStore, c clock.Clock) *SessionStore {
 	return &SessionStore{
 		sessions:      make(map[string]*session),
 		passwordStore: ps,
@@ -89,11 +85,15 @@ func VerifyPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-// SetupPassword hashes and persists the initial password. Returns an error
-// if a password is already set or the password is too short.
-func (s *SessionStore) SetupPassword(password, confirm string) error {
+// SetupPassword hashes and persists the initial password and language.
+// Returns an error if a password is already set, the password is too short,
+// or the language is not supported.
+func (s *SessionStore) SetupPassword(language, password, confirm string) error {
 	if !s.NeedsSetup() {
 		return fmt.Errorf("password is already set")
+	}
+	if !isSupportedLanguage(language) {
+		return fmt.Errorf("unsupported language: %s", language)
 	}
 	if password != confirm {
 		return fmt.Errorf("passwords do not match")
@@ -102,7 +102,27 @@ func (s *SessionStore) SetupPassword(password, confirm string) error {
 	if err != nil {
 		return err
 	}
-	return s.passwordStore.SetPasswordHash(hash)
+	return s.passwordStore.Update(func(c *config.Config) {
+		c.PasswordHash = hash
+		c.Language = language
+	})
+}
+
+// supportedLanguages is the set of languages the UI supports.
+var supportedLanguages = map[string]bool{
+	"en":    true,
+	"zh":    true,
+	"fr":    true,
+	"ru":    true,
+	"de":    true,
+	"es":    true,
+	"pt":    true,
+	"zh-TW": true,
+	"it":    true,
+}
+
+func isSupportedLanguage(lang string) bool {
+	return supportedLanguages[lang]
 }
 
 // ChangePassword verifies the old password, hashes and persists the new one,
@@ -121,7 +141,7 @@ func (s *SessionStore) ChangePassword(oldPassword, newPassword, confirm string) 
 	if err != nil {
 		return err
 	}
-	if err := s.passwordStore.SetPasswordHash(hash); err != nil {
+	if err := s.passwordStore.Update(func(c *config.Config) { c.PasswordHash = hash }); err != nil {
 		return err
 	}
 	s.DeleteAllSessions()

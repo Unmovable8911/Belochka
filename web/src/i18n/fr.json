@@ -1,4 +1,7 @@
 {
+  "sidebar": {
+    "servers": "Serveurs"
+  },
   "dashboard": {
     "title": "Tableau de bord",
     "noServers": "Aucun serveur configuré",
@@ -18,14 +21,13 @@
     "memory": "Mémoire",
     "disk": "Disque",
     "network": "Réseau",
-    "processes": "Processus",
-    "noProcessData": "Aucune donnée de processus disponible.",
     "edit": "Modifier",
     "delete": "Supprimer",
     "console": "Console",
     "swap": "Swap",
     "failedToLoad": "Échec du chargement du serveur",
-    "coresCount": "{{count}} cœurs"
+    "coresCount": "{{count}} cœurs",
+    "tabProcesses": "Processus"
   },
   "serverCard": {
     "cpu": "CPU",
@@ -85,8 +87,7 @@
   "common": {
     "save": "Enregistrer",
     "cancel": "Annuler",
-    "delete": "Supprimer",
-    "close": "Fermer"
+    "delete": "Supprimer"
   },
   "connection": {
     "lost": "Connexion perdue, reconnexion en cours..."
@@ -95,13 +96,7 @@
     "noInterfaces": "Aucune interface réseau",
     "waitingForData": "En attente de données..."
   },
-  "processTable": {
-    "pid": "PID",
-    "user": "Utilisateur",
-    "cpuPct": "CPU%",
-    "memPct": "Mémoire%",
-    "command": "Commande"
-  },
+  "processTable": {},
   "console": {
     "authPassword": "Mot de passe",
     "authKey": "Clé",
@@ -111,12 +106,22 @@
     "disconnectedMessage": "Session déconnectée.",
     "reconnect": "Reconnecter"
   },
-  "language": {
-    "label": "Langue"
-  },
+  "language": {},
   "auth": {
     "setupTitle": "Définir le mot de passe",
     "setupHint": "Créez un mot de passe pour protéger votre console Belochka.",
+    "selectLanguage": "Choisir la langue",
+    "continue": "Continuer",
+    "back": "Retour",
+    "passwordStrength": {
+      "0": "Très faible",
+      "1": "Faible",
+      "2": "Moyen",
+      "3": "Fort",
+      "4": "Très fort"
+    },
+    "passwordMatch": "Les mots de passe correspondent",
+    "passwordNoMatch": "Les mots de passe ne correspondent pas",
     "loginHint": "Entrez votre mot de passe pour continuer.",
     "password": "Mot de passe",
     "confirmPassword": "Confirmer le mot de passe",
@@ -138,26 +143,106 @@
     "passwordChanged": "Mot de passe modifié avec succès.",
     "passwordChangeFailed": "Échec de la modification du mot de passe.",
     "incorrectPassword": "Mot de passe actuel incorrect.",
-    "passwordTooShort": "Le mot de passe doit comporter au moins 6 caractères.",
-    "loggedOut": "Déconnecté avec succès."
+    "passwordTooShort": "Le mot de passe doit comporter au moins 6 caractères."
   },
   "settings": {
     "title": "Paramètres",
+    "description": "Configurez les paramètres de l'application et modifiez votre mot de passe.",
+    "sections": {
+      "general": "Général",
+      "server": "Serveur",
+      "logging": "Journalisation",
+      "security": "Sécurité"
+    },
     "language": "Langue",
+    "languageDesc": "Langue d'affichage de l'interface. Prend effet immédiatement après l'enregistrement.",
     "logPath": "Chemin des journaux",
     "logPathPlaceholder": "Défaut de la plateforme",
+    "logPathDesc": "Répertoire des fichiers journaux. Laissez vide pour la valeur par défaut.",
     "logRetentionDays": "Rétention des journaux (jours)",
+    "logRetentionDesc": "Nombre de jours de conservation des journaux avant nettoyage automatique.",
     "port": "Port",
+    "portDesc": "Port HTTP du serveur web. Nécessite un redémarrage pour prendre effet.",
     "dataDir": "Répertoire de données",
+    "dataDirDesc": "Répertoire de la base SQLite et des fichiers de configuration. Nécessite un redémarrage.",
     "save": "Enregistrer",
     "saving": "Enregistrement...",
     "savedSuccess": "Paramètres enregistrés",
     "saveFailed": "Échec de l'enregistrement des paramètres",
     "theme": "Thème",
-    "themeLight": "Clair",
-    "themeDark": "Sombre",
-    "themeSystem": "Système",
-    "restartRequired": "Ces paramètres nécessitent un redémarrage pour prendre effet :"
+    "restartDialog": {
+      "title": "Redémarrage requis",
+      "message": "Ces paramètres prendront effet après le redémarrage du serveur.",
+      "fields": "Modifié : {{fields}}",
+      "restartNow": "Redémarrer",
+      "later": "Plus tard",
+      "restarting": "Redémarrage du serveur...",
+      "restartFailed": "Échec du redémarrage. Veuillez redémarrer manuellement."
+    }
+  },
+  "groups": {
+    "newGroup": "Nouveau groupe",
+    "rename": "Renommer",
+    "delete": "Supprimer",
+    "moveTo": "Déplacer vers...",
+    "noGroup": "Aucun groupe",
+    "renameGroupTitle": "Renommer le groupe",
+    "deleteGroupTitle": "Supprimer le groupe",
+    "deleteGroupConfirm": "Êtes-vous sûr de vouloir supprimer <strong>{{name}}</strong> ? Ses serveurs deviendront non groupés.",
+    "deleting": "Suppression...",
+    "namePlaceholder": "Nom du groupe",
+    "createdSuccess": "Groupe « {{name}} » créé",
+    "renamedSuccess": "Groupe renommé en « {{name}} »",
+    "deletedSuccess": "Groupe « {{name}} » supprimé",
+    "createFailed": "Échec de la création du groupe",
+    "renameFailed": "Échec du renommage du groupe",
+    "deleteFailed": "Échec de la suppression du groupe",
+    "moveFailed": "Échec du déplacement",
+    "deleteFor": "Supprimer {{name}}",
+    "nameDuplicate": "Un groupe portant ce nom existe déjà"
+  },
+  "breadcrumb": {
+    "allServers": "Tous les serveurs"
+  },
+  "batch": {
+    "trigger": "Commande par lot",
+    "title": "Commande par lot",
+    "script": "Script",
+    "scriptPlaceholder": "Écrivez un script shell à exécuter sur les serveurs sélectionnés...",
+    "targets": "Serveurs cibles",
+    "selectAll": "Tous les serveurs",
+    "noServers": "Aucun serveur configuré",
+    "runOn": "Exécuter sur {{count}} serveurs",
+    "dispatching": "Envoi...",
+    "runInProgress": "Une exécution par lot est déjà en cours",
+    "dispatchFailed": "Échec de l'envoi de l'exécution par lot",
+    "viewLastResult": "Voir le dernier résultat",
+    "newCommand": "Nouvelle commande",
+    "cancelRun": "Annuler l'exécution",
+    "statusPending": "En attente",
+    "statusRunning": "En cours",
+    "statusSuccess": "Succès",
+    "statusFailed": "Échec",
+    "exitCode": "Code {{code}}",
+    "truncated": "Sortie tronquée",
+    "inputPlaceholder": "Saisie pour {{name}}...",
+    "inputDisabled": "Processus terminé",
+    "errorPrefix": "Erreur : {{message}}",
+    "reconnecting": "Reconnexion...",
+    "description": "Exécutez un script shell sur plusieurs serveurs et suivez la sortie en direct",
+    "filterPlaceholder": "Filtrer les serveurs",
+    "noMatches": "Aucun serveur ne correspond",
+    "lines": "{{count}} lignes",
+    "needScript": "Saisissez d'abord un script",
+    "needSelection": "Sélectionnez au moins un serveur",
+    "shortcutRun": "Ctrl+Entrée pour exécuter",
+    "overview": "{{done}}/{{total}} terminé",
+    "overviewDone": "{{done}}/{{total}} terminé en {{duration}}",
+    "copyOutput": "Copier la sortie",
+    "copied": "Copié",
+    "send": "Envoyer",
+    "jumpToBottom": "Aller en bas",
+    "emptyResults": "Aucune exécution à afficher"
   },
   "cronJobs": {
     "tabOverview": "Vue d'ensemble",
@@ -179,8 +264,6 @@
     "fieldMonth": "Mois",
     "fieldDayOfWeek": "Jour de la semaine",
     "fieldCommand": "Commande",
-    "fieldInvalid": "Valeur invalide",
-    "fieldCommandRequired": "La commande est requise",
     "save": "Enregistrer",
     "saving": "Enregistrement...",
     "cancel": "Annuler",
@@ -216,5 +299,31 @@
       "5": "vendredi",
       "6": "samedi"
     }
+  },
+  "processes": {
+    "loading": "Chargement des processus...",
+    "empty": "Aucun processus trouvé.",
+    "autoRefresh": "Rafraîchir auto",
+    "refresh": "Actualiser",
+    "searchPlaceholder": "Rechercher des processus...",
+    "processCount": "{{count}} processus",
+    "colPID": "PID",
+    "colUser": "Utilisateur",
+    "colRSS": "Mémoire",
+    "colCPU": "CPU%",
+    "colMEM": "MEM%",
+    "colETime": "Écoulé",
+    "colCommand": "Commande",
+    "kill": "Tuer",
+    "ppid": "PPID : {{ppid}}",
+    "confirmKillTitle": "Confirmer la fin du processus",
+    "confirmKillDesc": "Vous allez terminer :",
+    "signalSIGTERM": "SIGTERM - Arrêt gracieux",
+    "signalSIGKILL": "SIGKILL - Forcer l'arrêt",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "killSuccess": "Processus {{pid}} terminé avec succès",
+    "killFailed": "Échec de la terminaison du processus",
+    "protectedProcess": "Ce processus est protégé et ne peut pas être terminé"
   }
 }

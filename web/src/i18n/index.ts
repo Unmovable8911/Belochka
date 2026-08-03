@@ -4,6 +4,11 @@ import en from "./en.json"
 import zh from "./zh.json"
 import fr from "./fr.json"
 import ru from "./ru.json"
+import de from "./de.json"
+import es from "./es.json"
+import pt from "./pt.json"
+import zhTW from "./zh-TW.json"
+import it from "./it.json"
 
 // getAppLang reads the server-injected language from the <meta name="app-lang">
 // tag. Falls back to "en" when the tag is absent or empty.
@@ -19,6 +24,11 @@ i18n.use(initReactI18next).init({
     zh: { translation: zh },
     fr: { translation: fr },
     ru: { translation: ru },
+    de: { translation: de },
+    es: { translation: es },
+    pt: { translation: pt },
+    "zh-TW": { translation: zhTW },
+    it: { translation: it },
   },
   lng: getAppLang(),
   fallbackLng: "en",

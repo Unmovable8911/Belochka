@@ -84,6 +84,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	a.OnLanguageChange = UpdateTrayLanguage
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
@@ -96,7 +98,7 @@ func main() {
 		_, port, _ := net.SplitHostPort(a.Addr())
 		url := "http://localhost:" + port
 		slog.Info("starting in tray mode", "url", url)
-		runTray(a, url, ctx, stop) // blocks on main goroutine until quit
+		runTray(a, url, cfg.Language, ctx, stop) // blocks on main goroutine until quit
 		return
 	}
 

@@ -9,14 +9,13 @@ import (
 
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
-	// Use in-memory SQLite with a shared cache so WAL mode can be verified
-	// We pass an explicit 32-byte test key to avoid file-based key generation.
+	// Use in-memory SQLite with a deterministic 32-byte test key.
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)
 	}
 
-	s, err := newSQLiteStoreWithKey(":memory:", key)
+	s, err := newSQLiteStoreWithKey(":memory:", NewAESCipher(key))
 	if err != nil {
 		t.Fatalf("newSQLiteStoreWithKey failed: %v", err)
 	}

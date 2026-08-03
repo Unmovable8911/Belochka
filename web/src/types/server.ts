@@ -9,8 +9,24 @@ export interface Server {
   username: string
   key_path?: string
   host_key_fingerprint?: string
+  group_id?: string
   created_at: string
   updated_at: string
+}
+
+export interface Group {
+  id: string
+  name: string
+  member_count: number
+}
+
+// GroupNode is a Group with its member servers attached, ready for sidebar
+// rendering. Groups are flat — no nesting.
+export interface GroupNode {
+  id: string
+  name: string
+  member_count: number
+  servers: ServerInfo[]
 }
 
 export interface ServerFormData {
@@ -21,6 +37,7 @@ export interface ServerFormData {
   authType: AuthType
   password: string
   keyPath: string
+  group_id?: string
 }
 
 export interface TestResult {
@@ -55,15 +72,9 @@ export interface CPUCore {
   usagePercent: number
 }
 
-export interface CPUMetrics {
-  aggregate: CPUCore
-  cores: CPUCore[]
-}
-
 export interface MemoryMetrics {
   total: number
   used: number
-  available: number
   swapTotal: number
   swapUsed: number
 }
@@ -73,7 +84,6 @@ export interface DiskPartition {
   mountPoint: string
   total: number
   used: number
-  available: number
 }
 
 export interface DiskMetrics {
@@ -92,14 +102,21 @@ export interface NetworkMetrics {
 
 export interface Process {
   pid: number
+  ppid: number
   user: string
+  rss: number
   cpuPct: number
   memPct: number
+  etime: string
   command: string
+  command_name: string
+  protected: boolean
 }
 
-export interface ProcessMetrics {
-  processes: Process[]
+export interface KillResult {
+  pid: number
+  signal: string
+  success: boolean
 }
 
 export interface SystemInfo {
@@ -111,12 +128,15 @@ export interface SystemInfo {
 }
 
 export interface ServerMetrics {
-  cpu: CPUMetrics
-  memory: MemoryMetrics
-  disk: DiskMetrics
-  network: NetworkMetrics
-  process: ProcessMetrics
-  system: SystemInfo
+  aggregate?: CPUCore
+  cores?: CPUCore[]
+  memory?: MemoryMetrics
+  disk?: DiskMetrics
+  network?: NetworkMetrics
+  system?: SystemInfo
+  serverId?: string
+  collectedAt?: string
+  partial?: boolean
 }
 
 export interface ServerInfo {
@@ -126,6 +146,7 @@ export interface ServerInfo {
   status: string
   attempts?: number
   lastError?: string
+  group_id?: string
 }
 
 export interface AppConfig {
@@ -143,11 +164,4 @@ export interface PatchConfigResponse extends AppConfig {
 export interface AuthStatus {
   needs_setup: boolean
   authenticated: boolean
-}
-
-export interface AuthError {
-  error: {
-    code: string
-    message: string
-  }
 }

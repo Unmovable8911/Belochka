@@ -2,11 +2,6 @@
 
 Belochka (белочка, "squirrel") — a single-binary Go+React web app for managing 5-20 remote Linux servers via persistent SSH connections. Streams CPU, memory, disk, network, and process metrics to a browser dashboard via WebSocket, and provides a web-based interactive terminal (SSH console) for direct server access.
 
-## Repo State
-
-- **Location**: `/home/kilian/code/belochka`
-- **Branch**: `main`
-
 ## Constraints
 
 - Always reply in simplified Chinese, regardless of user's input language.
@@ -15,37 +10,23 @@ Belochka (белочка, "squirrel") — a single-binary Go+React web app for m
 
 ## Requirements
 
-- Before any code exploration or editing, **always** read `CODEBASE.md` first to understand the project structure, components, data flows, and external dependencies.
-- Based on `CODEBASE.md` and the current task, determine the exact set of files that are relevant. **Only** read and modify those files; never load or touch unrelated files. This keeps the context clean and focused.
+- Before any code exploration or editing, **always** read `CONTEXT.md` first to internalize the domain vocabulary (Server, Snapshot, Collector, Pool, Hub, etc.) and understand the architectural decisions that shaped the codebase.
+- Use the terms defined in `CONTEXT.md` consistently. Don't invent synonyms — if you need a concept that isn't there, flag it rather than drifting the language.
+- If a proposed change contradicts an architectural decision recorded in `CONTEXT.md`, surface it explicitly rather than silently overriding.
+- Determine relevant files by exploring the directory structure and using grep — `CONTEXT.md` gives you the concepts, not the file map. **Only** read and modify files that are actually relevant to the task.
 - After modifying code, **proactively** update any associated code (imports, references, configurations, etc.) to eliminate zombie code, broken references, or incompatibilities introduced by the change.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
-## Guidelines
+## Agent skills
 
-### 1. Think Before Coding
+### Issue tracker
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+Issues live as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+### Triage labels
 
-### 2. Simplicity First
+Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-**Minimum code that solves the problem. Nothing speculative.**
+### Domain docs
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## Future Consideration
-
-- Public internet deployment
-- SSH key passphrase support
-- User-configurable card ordering (drag and drop)
-- Docker-native deployment (Dockerfile)
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
